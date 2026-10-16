@@ -25,4 +25,4 @@ metadata:
 - {lesson} (WS-x.y)
 
 ### Gotchas
-- Agent worktree shells reject chained `cd … &&` commands; use `npm --prefix web` and separate calls (WS-1.1)
+- Agent worktree shells reject compound commands (`cd …`, chains, heredocs); use Write/Edit tools and single `npm --prefix web` calls (WS-1.1)
