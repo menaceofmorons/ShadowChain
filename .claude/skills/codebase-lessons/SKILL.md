@@ -20,9 +20,12 @@ metadata:
 ### Build & Tooling
 - `web/` toolchain majors: Vite 8, Vitest 5, ESLint 10, TypeScript 6, React 19; check APIs against these versions (WS-1.1)
 - Fresh worktrees have no `web/node_modules`; run `npm install --prefix web` before build or tests (WS-1.1)
+- `web` has no `@types/node`; read source files in tests via Vite `import.meta.glob(..., {query: "?raw"})`, not `node:fs` (WS-1.1)
 
 ### Conventions
 - {lesson} (WS-x.y)
 
 ### Gotchas
+- React Flow in jsdom renders edges only if nodes set `initialWidth`, `initialHeight` and `handles`; ResizeObserver/offset stubs alone are not enough (WS-1.1)
+- Vitest jsdom browser-API stubs must be set on both `window` and `globalThis` (WS-1.1)
 - Agent worktree shells reject compound commands (`cd …`, chains, heredocs); use Write/Edit tools and single `npm --prefix web` calls (WS-1.1)
