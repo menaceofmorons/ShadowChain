@@ -18,10 +18,10 @@ metadata:
 - This file merges with `merge=union`, so dedupe at release.
 
 ### Build & Tooling
-- {lesson} (WS-x.y)
+- `web/` toolchain majors: Vite 8, Vitest 5, ESLint 10, TypeScript 6, React 19; check APIs against these versions (WS-1.1)
 
 ### Conventions
 - {lesson} (WS-x.y)
 
 ### Gotchas
-- {lesson} (WS-x.y)
+- Agent worktree shells reject chained `cd … &&` commands; use `npm --prefix web` and separate calls (WS-1.1)
