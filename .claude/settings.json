@@ -1,0 +1,61 @@
+{
+  "worktree": {
+    "baseRef": "head"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git branch *)",
+      "Bash(git rev-parse *)",
+      "Bash(git merge-base *)",
+      "Bash(git merge *)",
+      "Bash(git rebase *)",
+      "Bash(git worktree *)",
+      "Bash(git checkout *)",
+      "Bash(git fetch *)",
+      "Bash(git pull --ff-only)",
+      "Bash(git -C * status *)",
+      "Bash(git -C * rev-parse *)",
+      "Bash(git -C * pull --ff-only)",
+      "Bash(git -C * merge --ff-only *)",
+      "Bash(py tools/trkr_update.py *)"
+    ],
+    "deny": [
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(git reset --hard *)",
+      "Read(**/Archive/**)",
+      "Read(**/Executed/**)",
+      "Read(**/Examples/**)",
+      "Read(**/_work/**)",
+      "Read(**/.git/**)",
+      "Read(**/node_modules/**)",
+      "Read(**/target/**)",
+      "Read(**/src-tauri/gen/**)",
+      "Read(**/web/dist/**)",
+      "Read(**/test-results/**)",
+      "Read(**/playwright-report/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Agent|Task|Read|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py \"$CLAUDE_PROJECT_DIR/.claude/hooks/lead_guard.py\""
+          }
+        ]
+      }
+    ]
+  },
+  "env": {
+    "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "2",
+    "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS": "8"
+  }
+}

@@ -1,0 +1,5 @@
+# Gitignored files that must be copied into every new worktree (gitignore-style patterns).
+# Add a line whenever you add a local-only file the code needs to build, run or test.
+# Never list dependency or build folders (node_modules, target) - Worktree Setup rebuilds those.
+# .env
+# config.local.toml

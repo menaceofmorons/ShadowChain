@@ -1,0 +1,19 @@
+# --- Agent team ---
+# Claude Code worktrees (Desktop session worktrees and subagent worktrees)
+.claude/worktrees/
+# Team Lead run marker (activates the lead guard hook in that worktree only)
+.claude/tlo-active
+# Personal settings
+.claude/settings.local.json
+
+# --- ShadowChain ---
+# SQLite runtime files (WAL mode)
+*.db
+*.db-wal
+*.db-shm
+# Frontend dependencies and build output
+web/node_modules/
+web/dist/
+# Compiled binary
+/shadowchain
+/shadowchain.exe
