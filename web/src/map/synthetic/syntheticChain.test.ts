@@ -50,6 +50,9 @@ describe.each(SYNTHETIC_NODE_COUNTS)('generateChain(%i)', (nodeCount) => {
       expect(ids.has(c.endA)).toBe(true);
       expect(c.endB === null || ids.has(c.endB)).toBe(true);
     }
+    const added = script.flatMap((o) => (o.kind === 'add' ? [o.connection] : []));
+    expect(added.length).toBeGreaterThan(0);
+    expect(added.every((c) => c.endA !== c.endB)).toBe(true);
     expect(() => buildChainTree(result, SYNTHETIC_ROOT_SYSTEM_ID)).not.toThrow();
   });
 });
