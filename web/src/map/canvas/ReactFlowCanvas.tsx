@@ -6,6 +6,10 @@ import type { CanvasAdapterProps } from "./canvasAdapter";
 const PLACEHOLDER_WIDTH = 150;
 const PLACEHOLDER_HEIGHT = 36;
 
+export function movedNodes(dragged: readonly Pick<Node, "id" | "position">[]): { key: string; x: number; y: number }[] {
+  return dragged.map((n) => ({ key: n.id, x: n.position.x, y: n.position.y }));
+}
+
 export function ReactFlowCanvas({ nodes, edges, onNodeSelect, onNodesMoved }: CanvasAdapterProps) {
   const flowNodes = useMemo<Node[]>(
     () =>
@@ -33,9 +37,7 @@ export function ReactFlowCanvas({ nodes, edges, onNodeSelect, onNodesMoved }: Ca
       edges={flowEdges}
       onlyRenderVisibleElements={false}
       onNodeClick={(_, node) => onNodeSelect(node.id)}
-      onNodeDragStop={(_, node) =>
-        onNodesMoved([{ key: node.id, x: node.position.x, y: node.position.y }])
-      }
+      onNodeDragStop={(_, _node, dragged) => onNodesMoved(movedNodes(dragged))}
     />
   );
 }
