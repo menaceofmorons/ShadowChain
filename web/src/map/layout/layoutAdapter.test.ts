@@ -136,4 +136,20 @@ describe('layout adapter', () => {
       message: 'boom',
     });
   });
+
+  it('rejects all pending requests when the endpoint reports an error', async () => {
+    let fail: (reason: string) => void = () => undefined;
+    const adapter = createLayoutAdapter({
+      post: () => undefined,
+      onMessage: () => undefined,
+      onError: (handler) => {
+        fail = handler;
+      },
+    });
+    const first = adapter.layout(fullRequest());
+    const second = adapter.layout(fullRequest());
+    fail('worker crashed');
+    await expect(first).rejects.toMatchObject({ code: 'engine-failure', message: 'worker crashed' });
+    await expect(second).rejects.toMatchObject({ code: 'engine-failure', message: 'worker crashed' });
+  });
 });

@@ -30,6 +30,14 @@ export function createLayoutAdapter(
     }
   });
 
+  endpoint.onError((reason) => {
+    const entries = [...pending.values()];
+    pending.clear();
+    for (const entry of entries) {
+      entry.reject(new LayoutError({ code: 'engine-failure', message: reason }));
+    }
+  });
+
   return {
     layout: (request) =>
       new Promise((resolve, reject) => {
