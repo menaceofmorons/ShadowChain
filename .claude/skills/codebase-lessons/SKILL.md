@@ -26,6 +26,8 @@ metadata:
 - {lesson} (WS-x.y)
 
 ### Gotchas
+- Vite denies `?raw` imports of dotfiles (e.g. `web/.npmrc`); tests cannot read them that way (WS-1.1)
+- Vitest shows test `console.info` output only with `--reporter=verbose` (WS-1.1)
 - React Flow in jsdom renders edges only if nodes set `initialWidth`, `initialHeight` and `handles`; ResizeObserver/offset stubs alone are not enough (WS-1.1)
 - Vitest jsdom browser-API stubs must be set on both `window` and `globalThis` (WS-1.1)
 - Agent worktree shells reject compound commands (`cd …`, chains, heredocs); use Write/Edit tools and single `npm --prefix web` calls (WS-1.1)
