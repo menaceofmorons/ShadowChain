@@ -1,7 +1,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ReactFlowCanvas, type CanvasEdge, type CanvasNode } from "./index";
+import { ReactFlowCanvas, movedNodes, type CanvasEdge, type CanvasNode } from "./index";
 
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
@@ -67,6 +67,22 @@ describe("ReactFlowCanvas",  () => {
       node?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(onSelect).toHaveBeenCalledWith("s:1");
+  });
+
+  it("reports every dragged node in one batch", () => {
+    const onNodesMoved = vi.fn();
+    const dragged = [
+      { id: "s:1", position: { x: 1, y: 2 } },
+      { id: "s:2", position: { x: 3, y: 4 } },
+      { id: "s:3", position: { x: 5, y: 6 } },
+    ];
+    onNodesMoved(movedNodes(dragged));
+    expect(onNodesMoved).toHaveBeenCalledTimes(1);
+    expect(onNodesMoved).toHaveBeenCalledWith([
+      { key: "s:1", x: 1, y: 2 },
+      { key: "s:2", x: 3, y: 4 },
+      { key: "s:3", x: 5, y: 6 },
+    ]);
   });
 
   it("is the only importer of @xyflow/react under web/src/map", () => {

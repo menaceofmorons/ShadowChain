@@ -1,2 +1,2 @@
 export type { CanvasAdapterProps, CanvasEdge, CanvasNode, MovedNode } from "./canvasAdapter";
-export { ReactFlowCanvas } from "./ReactFlowCanvas";
+export { ReactFlowCanvas, movedNodes } from "./ReactFlowCanvas";
