@@ -14,10 +14,10 @@ Project variables (`#PN`, `#DP`, `#CP`) are **not** defined here; they come from
 ## Tracker Columns (`py tools/trkr_update.py`)
 | Arg | Header in `#TRKR` |
 | --- | --- |
-| `--id-col` | `{ID}` |
-| `--status-col` | `{Status}` |
-| `--completed-col` | `{Completed}` |
-| `--notes-col` | `{Notes}` |
+| `--id-col` | `ID` |
+| `--status-col` | `Status` |
+| `--completed-col` | `Completed` |
+| `--notes-col` | `Notes` |
 
 The tab is always `--sheet #WS_ID`.
 
