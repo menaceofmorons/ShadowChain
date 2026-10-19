@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/menaceofmorons/ShadowChain/internal/store"
 )
 
 const SupportedVersion = 1
@@ -164,6 +167,9 @@ func setField(f reflect.Value, key, value string) error {
 		if err != nil {
 			return fmt.Errorf("config: override %s: %w", key, err)
 		}
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return fmt.Errorf("config: override %s: value must be finite", key)
+		}
 		f.SetFloat(v)
 	case reflect.Int, reflect.Int64:
 		v, err := strconv.ParseInt(value, 10, 64)
@@ -221,11 +227,11 @@ func (c Config) Validate() error {
 	if p.RarePasteShare < 0 || p.RarePasteShare > 1 {
 		bad("profile.rarePasteShare must be in [0, 1]")
 	}
-	if p.PasteSizeMin <= 0 || p.PasteSizeMax < p.PasteSizeMin {
-		bad("profile.pasteSizeMin/pasteSizeMax must satisfy 0 < min <= max")
+	if p.PasteSizeMin <= 0 || p.PasteSizeMax < p.PasteSizeMin || p.PasteSizeMax > store.MaxPasteLines {
+		bad("profile.pasteSizeMin/pasteSizeMax must satisfy 0 < min <= max <= %d", store.MaxPasteLines)
 	}
-	if p.RarePasteSizeMin <= 0 || p.RarePasteSizeMax < p.RarePasteSizeMin {
-		bad("profile.rarePasteSizeMin/rarePasteSizeMax must satisfy 0 < min <= max")
+	if p.RarePasteSizeMin <= 0 || p.RarePasteSizeMax < p.RarePasteSizeMin || p.RarePasteSizeMax > store.MaxPasteLines {
+		bad("profile.rarePasteSizeMin/rarePasteSizeMax must satisfy 0 < min <= max <= %d", store.MaxPasteLines)
 	}
 	return errors.Join(errs...)
 }

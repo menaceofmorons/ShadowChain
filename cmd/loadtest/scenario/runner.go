@@ -237,8 +237,7 @@ func (r *run) execute(ctx context.Context, stats *sqlite.Stats) (Result, error) 
 		return Result{}, err
 	}
 
-	m := report.FromStats(stats, postCheckpoint, r.counters.busy.Load())
-	m.WALPeakBytes = peak.Load()
+	m := report.FromStats(stats, peak.Load(), postCheckpoint, r.counters.busy.Load())
 	counts := r.snapshotCounts(m)
 	var maintErr error
 	counts.MaintenanceFailures, maintErr = maint.Failures()

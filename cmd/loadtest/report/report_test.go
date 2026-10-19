@@ -13,6 +13,20 @@ import (
 
 const cfgPath = "../contention.config.json"
 
+type fakeStats struct{ wal int64 }
+
+func (f fakeStats) QueueWait() store.LatencySummary       { return store.LatencySummary{} }
+func (f fakeStats) WriteLatency() store.LatencySummary    { return store.LatencySummary{} }
+func (f fakeStats) SnapshotLatency() store.LatencySummary { return store.LatencySummary{} }
+func (f fakeStats) WALSize() int64                        { return f.wal }
+
+func TestFromStatsUsesGivenWALPeak(t *testing.T) {
+	m := FromStats(fakeStats{wal: 1}, 900, 5, 2)
+	if m.WALPeakBytes != 900 || m.WALPostCheckpointBytes != 5 || m.BusyErrors != 2 {
+		t.Fatalf("got %+v", m)
+	}
+}
+
 func defaults(t *testing.T) config.Config {
 	t.Helper()
 	cfg, err := config.Load(cfgPath, nil)
