@@ -8,6 +8,8 @@ type LatencySummary struct {
 	P95   time.Duration
 	P99   time.Duration
 	Max   time.Duration
+
+	Truncated bool
 }
 
 type StatsRecorder interface {
