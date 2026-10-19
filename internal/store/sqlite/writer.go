@@ -96,9 +96,14 @@ func (s *Store) enqueue(j *job) error {
 func (s *Store) writerLoop() {
 	defer close(s.exited)
 	for j := range s.queue {
-		s.stats.RecordQueueWait(time.Since(j.enqueued))
+		measured := j.exclusive == nil
+		if measured {
+			s.stats.RecordQueueWait(time.Since(j.enqueued))
+		}
 		err := s.runJob(j)
-		s.stats.RecordWriteLatency(time.Since(j.enqueued))
+		if measured {
+			s.stats.RecordWriteLatency(time.Since(j.enqueued))
+		}
 		j.done <- err
 	}
 }

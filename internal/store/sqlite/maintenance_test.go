@@ -78,8 +78,8 @@ func TestCheckpointBusyThenSucceedsThroughQueue(t *testing.T) {
 	if ok.Busy {
 		t.Fatal("checkpoint still busy after reader closed")
 	}
-	if got := stats.queueWaitCount() - before; got != 2 {
-		t.Errorf("checkpoints recorded %d queue waits, want 2", got)
+	if got := stats.queueWaitCount() - before; got != 0 {
+		t.Errorf("checkpoints recorded %d queue waits, want 0", got)
 	}
 }
 
@@ -280,6 +280,7 @@ func TestCheckpointWithReaderDoesNotStallQueue(t *testing.T) {
 	bound := sqlite.CheckpointMaxWait + time.Second
 	var wg sync.WaitGroup
 	results := make([]sqlite.CheckpointResult, 3)
+	start := time.Now()
 	for i := range results {
 		wg.Add(1)
 		go func() {
@@ -298,11 +299,37 @@ func TestCheckpointWithReaderDoesNotStallQueue(t *testing.T) {
 			t.Errorf("checkpoint %d not busy while reader holds snapshot", i)
 		}
 	}
-	if got := stats.maxQueueWait(); got > bound {
-		t.Errorf("max queue wait %v exceeds bound %v", got, bound)
+	if took := time.Since(start); took > time.Duration(len(results))*bound {
+		t.Errorf("serialised checkpoints took %v, exceeds %v", took, time.Duration(len(results))*bound)
 	}
 	if m.BusyCheckpoints() != 3 {
 		t.Errorf("busy checkpoints = %d, want 3", m.BusyCheckpoints())
+	}
+}
+
+func TestMaintenanceJobsNotRecordedAsWriteCommands(t *testing.T) {
+	db := openSeeded(t)
+	stats := &fakeStats{}
+	m := newMaintenance(t, db, stats)
+	if err := m.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := stats.queueWaitCount(); got != 0 {
+		t.Fatalf("queue wait samples after maintenance = %d, want 0", got)
+	}
+}
+
+func TestMaintenanceJobsStayWithinBound(t *testing.T) {
+	db := openSeeded(t)
+	writeBulk(t, db, 1, 5000)
+	m := newMaintenance(t, db, &fakeStats{})
+	const bound = 2 * time.Second
+	start := time.Now()
+	if err := m.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took > bound {
+		t.Fatalf("maintenance held the writer %v, bound %v", took, bound)
 	}
 }
 

@@ -20,6 +20,8 @@ const (
 	CheckpointMaxWait = 100 * time.Millisecond
 	// TUNE: delay before retrying a busy TRUNCATE checkpoint; short enough to clear the WAL soon after readers release.
 	DefaultCheckpointRetryInterval = 10 * time.Second
+	// TUNE: rows examined per index by PRAGMA optimize; keeps the analysis on the writer queue short.
+	OptimizeAnalysisLimit = 400
 )
 
 type CheckpointResult struct {
@@ -107,7 +109,15 @@ func (m *Maintenance) SampleWAL() (int64, error) {
 
 func (m *Maintenance) Optimize(ctx context.Context) error {
 	err := m.store.executeExclusive(ctx, func(ctx context.Context, conn *sql.DB) error {
-		_, err := conn.ExecContext(ctx, "PRAGMA optimize")
+		c, err := conn.Conn(ctx)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = c.Close() }()
+		if _, err := c.ExecContext(ctx, fmt.Sprintf("PRAGMA analysis_limit = %d", OptimizeAnalysisLimit)); err != nil {
+			return err
+		}
+		_, err = c.ExecContext(ctx, "PRAGMA optimize")
 		return err
 	})
 	if err != nil {
