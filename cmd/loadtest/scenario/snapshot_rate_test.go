@@ -65,3 +65,28 @@ func TestSnapshotCountFollowsRate(t *testing.T) {
 		t.Fatalf("snapshots issued %d (samples %d), planned %d", res.Counts.Snapshots, res.Counts.SnapshotSamples, planned)
 	}
 }
+
+func TestBurstWindowsPlaceReadsAtBurstStart(t *testing.T) {
+	p := loadDefault(t).Profile
+	p.SnapshotsPerSecond = 100
+	atStart := func(burst bool) int {
+		n := 0
+		for _, w := range BuildPlan(p, 40) {
+			if w.Burst != burst {
+				continue
+			}
+			for _, s := range w.Snapshots {
+				if s.Offset == 0 {
+					n++
+				}
+			}
+		}
+		return n
+	}
+	if atStart(true) == 0 {
+		t.Error("burst windows have no reads at the burst start")
+	}
+	if atStart(false) != 0 {
+		t.Error("non-burst windows have reads at the burst start")
+	}
+}

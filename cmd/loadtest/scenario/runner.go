@@ -76,6 +76,7 @@ type Counts struct {
 	Busy                int64 `json:"busy"`
 	OtherErrors         int64 `json:"otherErrors"`
 	MaintenanceFailures int64 `json:"maintenanceFailures"`
+	BusyCheckpoints     int64 `json:"busyCheckpoints"`
 	QueueWaitSamples    int64 `json:"queueWaitSamples"`
 	WriteLatencySamples int64 `json:"writeLatencySamples"`
 	SnapshotSamples     int64 `json:"snapshotSamples"`
@@ -232,6 +233,7 @@ func (r *run) execute(ctx context.Context, stats *sqlite.Stats) (Result, error) 
 	counts := r.snapshotCounts(m)
 	var maintErr error
 	counts.MaintenanceFailures, maintErr = maint.Failures()
+	counts.BusyCheckpoints = maint.BusyCheckpoints()
 	res := Result{
 		Seed:         p.Seed,
 		Windows:      windows,

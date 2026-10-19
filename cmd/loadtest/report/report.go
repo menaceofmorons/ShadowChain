@@ -97,9 +97,10 @@ func verdict(pass bool) string {
 
 func (r Report) WriteText(w io.Writer) error {
 	p := r.Config.Profile
-	if _, err := fmt.Fprintf(w, "Config: %s (version %d)\nProfile: tenants=%d characters=%d durationMinutes=%g burstShare=%g pasteSize=%d-%d rarePasteSize=%d-%d rarePasteShare=%g seed=%d\n\n",
+	if _, err := fmt.Fprintf(w, "Config: %s (version %d)\nProfile: tenants=%d characters=%d durationMinutes=%g burstShare=%g pasteSize=%d-%d rarePasteSize=%d-%d rarePasteShare=%g seed=%d windowMillis=%d burstEveryWindows=%d backgroundOpChance=%g jumpShare=%g snapshotsPerSecond=%g\n\n",
 		r.ConfigPath, r.Config.Version, p.Tenants, p.Characters, p.DurationMinutes, p.BurstShare,
-		p.PasteSizeMin, p.PasteSizeMax, p.RarePasteSizeMin, p.RarePasteSizeMax, p.RarePasteShare, p.Seed); err != nil {
+		p.PasteSizeMin, p.PasteSizeMax, p.RarePasteSizeMin, p.RarePasteSizeMax, p.RarePasteShare, p.Seed,
+		p.WindowMillis, p.BurstEveryWindows, p.BackgroundOpChance, p.JumpShare, p.SnapshotsPerSecond); err != nil {
 		return err
 	}
 	for _, m := range r.Results {

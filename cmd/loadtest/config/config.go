@@ -43,7 +43,7 @@ type Profile struct {
 	BurstEveryWindows  int     `json:"burstEveryWindows"`
 	BackgroundOpChance float64 `json:"backgroundOpChance"`
 	JumpShare          float64 `json:"jumpShare"`
-	SnapshotsPerSecond  float64 `json:"snapshotsPerSecond"`
+	SnapshotsPerSecond float64 `json:"snapshotsPerSecond"`
 }
 
 type Config struct {
