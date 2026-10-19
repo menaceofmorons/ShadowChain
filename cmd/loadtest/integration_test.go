@@ -82,6 +82,47 @@ func TestIntegrationHundredTenantTargetRuns(t *testing.T) {
 	}
 }
 
+func TestIntegrationSnapshotRateOverrideDrivesReadVolume(t *testing.T) {
+	base := append([]string{"-json", "-config", testConfigPath, "-set", "profile.durationMinutes=0.05"}, relaxedLatency...)
+
+	issued := func(rate string) (int64, scenario.Result) {
+		code, res, out := runLoadtest(t, append(base, "-set", "profile.snapshotsPerSecond="+rate)...)
+		if code != exitOK {
+			t.Fatalf("rate %s: exit = %d\n%s", rate, code, out)
+		}
+		if res.Counts.OtherErrors != 0 || res.Counts.Busy != 0 || res.Counts.MaintenanceFailures != 0 {
+			t.Fatalf("rate %s: errors %+v (%s)", rate, res.Counts, res.FirstError)
+		}
+		return res.Counts.Snapshots, res
+	}
+
+	low, lowRes := issued("5")
+	high, _ := issued("50")
+	if got := lowRes.Report.Config.Profile.SnapshotsPerSecond; got != 5 {
+		t.Errorf("report profile.snapshotsPerSecond = %v, want the override 5", got)
+	}
+	if lowRes.Windows < 1 {
+		t.Fatalf("no windows planned: %+v", lowRes)
+	}
+	if low == 0 || high <= low {
+		t.Fatalf("snapshots at 5/s = %d, at 50/s = %d; read volume must follow the configured rate", low, high)
+	}
+	wantLow := int64(5 * float64(lowRes.Report.Config.Profile.WindowMillis) / 1000 * float64(lowRes.Windows))
+	if low != wantLow {
+		t.Errorf("snapshots at 5/s = %d over %d windows, want exactly %d", low, lowRes.Windows, wantLow)
+	}
+}
+
+func TestIntegrationSnapshotRateConfigDefaultIsUnchanged(t *testing.T) {
+	code, res, out := runLoadtest(t, append([]string{"-json", "-short", "-config", testConfigPath}, relaxedLatency...)...)
+	if code != exitOK {
+		t.Fatalf("exit = %d\n%s", code, out)
+	}
+	if got := res.Report.Config.Profile.SnapshotsPerSecond; got != 100 {
+		t.Errorf("config default profile.snapshotsPerSecond = %v, want 100", got)
+	}
+}
+
 func TestIntegrationThresholdEditInConfigFileChangesVerdict(t *testing.T) {
 	raw, err := os.ReadFile(testConfigPath)
 	if err != nil {
