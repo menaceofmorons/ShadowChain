@@ -34,7 +34,6 @@ type Options struct {
 	ConfigPath       string
 	Duration         time.Duration
 	Window           time.Duration
-	Readers          int
 	TempRoot         string
 	MaintenanceEvery time.Duration
 	SampleEvery      time.Duration
@@ -47,7 +46,6 @@ func FullOptions(cfg config.Config, configPath string) Options {
 		ConfigPath:       configPath,
 		Duration:         time.Duration(cfg.Profile.DurationMinutes * float64(time.Minute)),
 		Window:           time.Duration(cfg.Profile.WindowMillis) * time.Millisecond,
-		Readers:          cfg.Profile.SnapshotReaders,
 		MaintenanceEvery: sqlite.DefaultMaintenanceInterval,
 		SampleEvery:      sqlite.DefaultWALSampleInterval,
 	}
@@ -57,12 +55,12 @@ func ShortOptions(cfg config.Config, configPath string) Options {
 	cfg.Profile.Tenants = min(cfg.Profile.Tenants, shortTenants)
 	cfg.Profile.Characters = min(cfg.Profile.Characters, shortCharacters)
 	cfg.Profile.DurationMinutes = shortDuration.Minutes()
+	cfg.Profile.WindowMillis = int(shortWindow / time.Millisecond)
 	return Options{
 		Config:           cfg,
 		ConfigPath:       configPath,
 		Duration:         shortDuration,
 		Window:           shortWindow,
-		Readers:          cfg.Profile.SnapshotReaders,
 		MaintenanceEvery: shortMaintain,
 		SampleEvery:      sqlite.DefaultWALSampleInterval,
 	}
@@ -134,9 +132,6 @@ type run struct {
 func validate(o Options) error {
 	if o.Duration <= 0 || o.Window <= 0 {
 		return errors.New("scenario: duration and window must be positive")
-	}
-	if o.Readers < 1 {
-		return errors.New("scenario: at least one snapshot reader is required")
 	}
 	if o.MaintenanceEvery <= 0 || o.SampleEvery <= 0 {
 		return errors.New("scenario: maintenance intervals must be positive")
@@ -312,17 +307,18 @@ func (r *run) runWindow(ctx context.Context, w Window) error {
 			r.runOp(ctx, op)
 		})
 	}
-	burstDone := make(chan struct{})
-	if w.Burst {
-		for i := range r.opts.Readers {
-			background.Go(func() { r.readDuringBurst(ctx, w, i, burstDone) })
-		}
+	for _, read := range w.Snapshots {
+		background.Go(func() {
+			if !sleepCtx(ctx, time.Duration(read.Offset*float64(r.opts.Window))) {
+				return
+			}
+			r.readSnapshot(ctx, read.Tenant)
+		})
 	}
 	for _, op := range w.Pastes {
 		pastes.Go(func() { r.runOp(ctx, op) })
 	}
 	pastes.Wait()
-	close(burstDone)
 	background.Wait()
 	if err := ctx.Err(); err != nil {
 		return err
@@ -333,19 +329,10 @@ func (r *run) runWindow(ctx context.Context, w Window) error {
 	return ctx.Err()
 }
 
-func (r *run) readDuringBurst(ctx context.Context, w Window, worker int, done <-chan struct{}) {
-	rng := newRand(r.opts.Config.Profile.Seed + uint64(w.Index)*1000 + uint64(worker) + 1)
-	for {
-		select {
-		case <-done:
-			return
-		default:
-		}
-		tenant := w.Pastes[rng.IntN(len(w.Pastes))].Tenant
-		_, err := r.reader.ReadSnapshot(ctx, TenantID(tenant))
-		r.counters.snapshots.Add(1)
-		r.counters.classify(err)
-	}
+func (r *run) readSnapshot(ctx context.Context, tenant int) {
+	_, err := r.reader.ReadSnapshot(ctx, TenantID(tenant))
+	r.counters.snapshots.Add(1)
+	r.counters.classify(err)
 }
 
 func (r *run) runOp(ctx context.Context, op Op) {
