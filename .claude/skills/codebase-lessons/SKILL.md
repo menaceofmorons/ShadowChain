@@ -25,6 +25,7 @@ metadata:
 - `gofmt -l` flags every Go file on Windows (CRLF checkout); rely on golangci-lint instead (WS-1.6)
 - Go `-race` is unavailable on this machine (no cgo) (WS-1.6)
 - `go/parser.ParseDir` is deprecated; walk `os.ReadDir` and call `parser.ParseFile` (WS-1.6)
+- Go 1.27 has `sync.WaitGroup.Go`; use it for goroutine fan-out (WS-1.6)
 
 ### Conventions
 - {lesson} (WS-x.y)
