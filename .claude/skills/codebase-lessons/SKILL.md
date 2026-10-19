@@ -37,6 +37,7 @@ metadata:
 - modernc.org/sqlite applies DSN `_pragma=` params on every new pool connection; no ConnectHook needed for pool-wide pragmas (WS-1.6)
 - SQLite DSN on Windows: build with `url.URL{Scheme: "file", Opaque: slashPath}` (WS-1.6)
 - Windows clock resolution can yield 0 durations for fast queries; assert latency `>= 0`, not `> 0` (WS-1.6)
+- `internal/store/sqlite` tests use both `sqlite` (internal) and `sqlite_test` packages; helpers such as `countRows` exist only in the internal one (WS-1.6)
 - Only `sqlite.Store`'s writer goroutine may use `DB.Writer()`; the one-connection writer pool is shared by nothing else (WS-1.6)
 - Vitest shows test `console.info` output only with `--reporter=verbose` (WS-1.1)
 - React Flow in jsdom renders edges only if nodes set `initialWidth`, `initialHeight` and `handles`; ResizeObserver/offset stubs alone are not enough (WS-1.1)
