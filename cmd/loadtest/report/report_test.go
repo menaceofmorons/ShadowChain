@@ -117,7 +117,7 @@ func TestReportListsThresholdsUsed(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := text.String()
-	for _, want := range []string{cfgPath, "Writer queue wait p99", "Writer queue wait max", "Write latency p95", "Snapshot p95", "WAL size peak", "TRUNCATE", "SQLITE_BUSY", "<= 77 ms", "measured 90.000 ms", "FAIL", "Verdict: FAIL", "tenants=100", "seed=1"} {
+	for _, want := range []string{cfgPath, "Writer queue wait p99", "Writer queue wait max", "Write latency p95", "Snapshot p95", "WAL size peak", "TRUNCATE", "SQLITE_BUSY", "<= 77 ms", "measured 90.000 ms", "FAIL", "Verdict: FAIL", "tenants=100", "seed=1", "windowMillis=", "burstEveryWindows=", "backgroundOpChance=", "jumpShare=", "snapshotsPerSecond="} {
 		if !strings.Contains(out, want) {
 			t.Errorf("text report missing %q:\n%s", want, out)
 		}

@@ -39,6 +39,9 @@ type Op struct {
 	Lines     []store.PasteLine
 }
 
+// TUNE: share of snapshot reads in a burst window issued at the burst start, so the burst p95 metric covers reads that overlap the paste drain.
+const burstReadShare = 0.5
+
 type SnapshotRead struct {
 	Tenant int
 	Offset float64
@@ -159,13 +162,13 @@ func BuildPlan(p config.Profile, windows int) []Window {
 			}
 			w.Background = append(w.Background, op)
 		}
-		w.Snapshots = snapshotReads(snapRng, p)
+		w.Snapshots = snapshotReads(snapRng, p, w.Burst)
 		plan[i] = w
 	}
 	return plan
 }
 
-func snapshotReads(rng *rand.Rand, p config.Profile) []SnapshotRead {
+func snapshotReads(rng *rand.Rand, p config.Profile, burst bool) []SnapshotRead {
 	expected := p.SnapshotsPerSecond * float64(p.WindowMillis) / 1000
 	n := int(expected)
 	if rng.Float64() < expected-float64(n) {
@@ -173,7 +176,11 @@ func snapshotReads(rng *rand.Rand, p config.Profile) []SnapshotRead {
 	}
 	reads := make([]SnapshotRead, n)
 	for i := range reads {
-		reads[i] = SnapshotRead{Tenant: rng.IntN(p.Tenants) + 1, Offset: rng.Float64()}
+		read := SnapshotRead{Tenant: rng.IntN(p.Tenants) + 1, Offset: rng.Float64()}
+		if burst && rng.Float64() < burstReadShare {
+			read.Offset = 0
+		}
+		reads[i] = read
 	}
 	return reads
 }
