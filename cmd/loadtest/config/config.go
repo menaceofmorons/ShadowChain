@@ -38,6 +38,12 @@ type Profile struct {
 	RarePasteSizeMax int     `json:"rarePasteSizeMax"`
 	RarePasteShare   float64 `json:"rarePasteShare"`
 	Seed             uint64  `json:"seed"`
+
+	WindowMillis       int     `json:"windowMillis"`
+	BurstEveryWindows  int     `json:"burstEveryWindows"`
+	BackgroundOpChance float64 `json:"backgroundOpChance"`
+	JumpShare          float64 `json:"jumpShare"`
+	SnapshotReaders    int     `json:"snapshotReaders"`
 }
 
 type Config struct {
@@ -226,6 +232,21 @@ func (c Config) Validate() error {
 	}
 	if p.RarePasteShare < 0 || p.RarePasteShare > 1 {
 		bad("profile.rarePasteShare must be in [0, 1]")
+	}
+	if p.WindowMillis <= 0 {
+		bad("profile.windowMillis must be positive")
+	}
+	if p.BurstEveryWindows <= 0 {
+		bad("profile.burstEveryWindows must be positive")
+	}
+	if p.BackgroundOpChance < 0 || p.BackgroundOpChance > 1 {
+		bad("profile.backgroundOpChance must be in [0, 1]")
+	}
+	if p.JumpShare < 0 || p.JumpShare > 1 {
+		bad("profile.jumpShare must be in [0, 1]")
+	}
+	if p.SnapshotReaders <= 0 {
+		bad("profile.snapshotReaders must be positive")
 	}
 	if p.PasteSizeMin <= 0 || p.PasteSizeMax < p.PasteSizeMin || p.PasteSizeMax > store.MaxPasteLines {
 		bad("profile.pasteSizeMin/pasteSizeMax must satisfy 0 < min <= max <= %d", store.MaxPasteLines)

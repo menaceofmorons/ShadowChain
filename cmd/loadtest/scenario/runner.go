@@ -2,7 +2,6 @@ package scenario
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -19,15 +18,13 @@ import (
 )
 
 const (
-	shortTenants    = 10
-	shortCharacters = 30
-	shortDuration   = 3 * time.Second
-	shortWindow     = 250 * time.Millisecond
-	fullWindow      = time.Second
-	shortMaintain   = time.Second
-	peakSampleEvery = 100 * time.Millisecond
-	stallGap        = 50 * time.Millisecond
-	defaultReaders  = 4
+	shortTenants    = 10                     // TUNE: keep the -short smoke run under a few seconds
+	shortCharacters = 30                     // TUNE: keep the -short smoke run under a few seconds
+	shortDuration   = 3 * time.Second        // TUNE: keep the -short smoke run under a few seconds
+	shortWindow     = 250 * time.Millisecond // TUNE: several burst windows inside the short duration
+	shortMaintain   = time.Second            // TUNE: at least one maintenance cycle inside the short duration
+	peakSampleEvery = 100 * time.Millisecond // TUNE: fine enough to catch WAL peaks between checkpoints
+	stallGap        = 50 * time.Millisecond  // TUNE: injected writer stalls recur within the short duration
 	shipTypeID      = 11176
 	shipBaseMass    = 1_000_000
 )
@@ -49,8 +46,8 @@ func FullOptions(cfg config.Config, configPath string) Options {
 		Config:           cfg,
 		ConfigPath:       configPath,
 		Duration:         time.Duration(cfg.Profile.DurationMinutes * float64(time.Minute)),
-		Window:           fullWindow,
-		Readers:          defaultReaders,
+		Window:           time.Duration(cfg.Profile.WindowMillis) * time.Millisecond,
+		Readers:          cfg.Profile.SnapshotReaders,
 		MaintenanceEvery: sqlite.DefaultMaintenanceInterval,
 		SampleEvery:      sqlite.DefaultWALSampleInterval,
 	}
@@ -65,7 +62,7 @@ func ShortOptions(cfg config.Config, configPath string) Options {
 		ConfigPath:       configPath,
 		Duration:         shortDuration,
 		Window:           shortWindow,
-		Readers:          defaultReaders,
+		Readers:          cfg.Profile.SnapshotReaders,
 		MaintenanceEvery: shortMaintain,
 		SampleEvery:      sqlite.DefaultWALSampleInterval,
 	}
@@ -96,7 +93,9 @@ type Result struct {
 	Report       report.Report `json:"report"`
 }
 
-func (r Result) Healthy() bool { return r.Report.Pass && r.Counts.OtherErrors == 0 && r.Counts.MaintenanceFailures == 0 }
+func (r Result) Healthy() bool {
+	return r.Report.Pass && r.Counts.OtherErrors == 0 && r.Counts.MaintenanceFailures == 0
+}
 
 type counters struct {
 	pastes, pasteLines, jumps, patches, snapshots, skipped, busy, other atomic.Int64
@@ -116,6 +115,8 @@ func (c *counters) classify(err error) {
 		c.firstError.CompareAndSwap(nil, &msg)
 	}
 }
+
+func (c *counters) failed() int64 { return c.busy.Load() + c.other.Load() }
 
 func isBusy(err error) bool {
 	msg := strings.ToLower(err.Error())
@@ -175,13 +176,8 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 }
 
 func seed(ctx context.Context, db *sqlite.DB, p config.Profile) error {
-	if err := sqlite.ApplyTestSchema(ctx, db.Writer()); err != nil {
+	if err := sqlite.PrepareLoadTenants(ctx, db, p.Tenants); err != nil {
 		return err
-	}
-	for t := 1; t <= p.Tenants; t++ {
-		if _, err := db.Writer().ExecContext(ctx, `INSERT INTO tenant (id) VALUES (?)`, t); err != nil {
-			return fmt.Errorf("scenario: seed tenant: %w", err)
-		}
 	}
 	warm := sqlite.NewStore(db, sqlite.NewStats())
 	defer warm.Close()
@@ -237,7 +233,7 @@ func (r *run) execute(ctx context.Context, stats *sqlite.Stats) (Result, error) 
 		return Result{}, err
 	}
 
-	m := report.FromStats(stats, peak.Load(), postCheckpoint, r.counters.busy.Load())
+	m := report.FromStats(stats, peak.Load(), postCheckpoint, r.counters.failed())
 	counts := r.snapshotCounts(m)
 	var maintErr error
 	counts.MaintenanceFailures, maintErr = maint.Failures()
@@ -282,12 +278,12 @@ func samplePeak(ctx context.Context, m *sqlite.Maintenance, peak *atomic.Int64) 
 
 func stallWriter(ctx context.Context, db *sqlite.DB, stall time.Duration) {
 	for sleepCtx(ctx, stallGap) {
-		conn, err := db.Writer().Conn(ctx)
+		release, err := sqlite.HoldWriterConnection(ctx, db)
 		if err != nil {
 			return
 		}
 		alive := sleepCtx(ctx, stall)
-		_ = conn.Close()
+		release()
 		if !alive {
 			return
 		}
@@ -309,7 +305,12 @@ func (r *run) runWindow(ctx context.Context, w Window) error {
 	start := time.Now()
 	var background, pastes sync.WaitGroup
 	for _, op := range w.Background {
-		background.Go(func() { r.runOp(ctx, op) })
+		background.Go(func() {
+			if !sleepCtx(ctx, time.Duration(op.Offset*float64(r.opts.Window))) {
+				return
+			}
+			r.runOp(ctx, op)
+		})
 	}
 	burstDone := make(chan struct{})
 	if w.Burst {
@@ -363,11 +364,8 @@ func (r *run) runOp(ctx context.Context, op Op) {
 }
 
 func (r *run) runJump(ctx context.Context, op Op, actor store.Actor) {
-	var connectionID int64
-	err := r.db.Reader().QueryRowContext(ctx,
-		`SELECT id FROM connection WHERE tenant_id = ? ORDER BY id LIMIT 1 OFFSET ?`,
-		op.Tenant, op.Pick).Scan(&connectionID)
-	if errors.Is(err, sql.ErrNoRows) {
+	connectionID, err := sqlite.NthConnectionID(ctx, r.db, TenantID(op.Tenant), op.Pick)
+	if errors.Is(err, store.ErrNotFound) {
 		r.counters.skipped.Add(1)
 		return
 	}
@@ -390,11 +388,8 @@ func (r *run) runJump(ctx context.Context, op Op, actor store.Actor) {
 }
 
 func (r *run) runPatch(ctx context.Context, op Op, actor store.Actor) {
-	var id, version int64
-	err := r.db.Reader().QueryRowContext(ctx,
-		`SELECT id, version FROM signature WHERE tenant_id = ? ORDER BY id LIMIT 1 OFFSET ?`,
-		op.Tenant, op.Pick).Scan(&id, &version)
-	if errors.Is(err, sql.ErrNoRows) {
+	id, version, err := sqlite.NthSignatureVersion(ctx, r.db, TenantID(op.Tenant), op.Pick)
+	if errors.Is(err, store.ErrNotFound) {
 		r.counters.skipped.Add(1)
 		return
 	}

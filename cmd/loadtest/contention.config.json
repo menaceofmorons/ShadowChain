@@ -19,6 +19,11 @@
     "rarePasteSizeMin": 30,
     "rarePasteSizeMax": 40,
     "rarePasteShare": 0.05,
-    "seed": 1
+    "seed": 1,
+    "windowMillis": 1000,
+    "burstEveryWindows": 2,
+    "backgroundOpChance": 0.2,
+    "jumpShare": 0.7,
+    "snapshotReaders": 4
   }
 }

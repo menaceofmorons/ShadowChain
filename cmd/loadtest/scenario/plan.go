@@ -10,17 +10,14 @@ import (
 )
 
 const (
-	SystemsPerTenant   = 5
-	BaseSystemID       = 30000000
-	BaseCharacterID    = 90000000
-	BurstPeriod        = 2
-	BackgroundOpChance = 0.2
-	JumpShare          = 0.7
-	WarmupLines        = 10
-	WarmupWormholes    = 5
-	codeSpace          = 2000
-	codeStride         = 7
-	seedMix            = 0x9e3779b97f4a7c15
+	SystemsPerTenant = 5
+	BaseSystemID     = 30000000
+	BaseCharacterID  = 90000000
+	WarmupLines      = 10 // TUNE: per-tenant seed size so pastes and picks hit populated tenants
+	WarmupWormholes  = 5  // TUNE: connections seeded per tenant for jump picks
+	codeSpace        = 2000
+	codeStride       = 7
+	seedMix          = 0x9e3779b97f4a7c15
 )
 
 type OpKind string
@@ -37,6 +34,7 @@ type Op struct {
 	Character int
 	System    store.SystemID
 	Pick      int
+	Offset    float64
 	Lines     []store.PasteLine
 }
 
@@ -125,7 +123,7 @@ func BuildPlan(p config.Profile, windows int) []Window {
 	plan := make([]Window, windows)
 	burstCount := BurstTenantCount(p)
 	for i := range plan {
-		w := Window{Index: i, Burst: i%BurstPeriod == 0}
+		w := Window{Index: i, Burst: i%p.BurstEveryWindows == 0}
 		pasters := 1
 		if w.Burst {
 			pasters = burstCount
@@ -142,11 +140,11 @@ func BuildPlan(p config.Profile, windows int) []Window {
 			})
 		}
 		for c := 1; c <= p.Characters; c++ {
-			if rng.Float64() >= BackgroundOpChance {
+			if rng.Float64() >= p.BackgroundOpChance {
 				continue
 			}
-			op := Op{Tenant: CharacterTenant(c, p.Tenants), Character: c, System: SystemFor(CharacterTenant(c, p.Tenants), 0)}
-			if rng.Float64() < JumpShare {
+			op := Op{Tenant: CharacterTenant(c, p.Tenants), Character: c, System: SystemFor(CharacterTenant(c, p.Tenants), 0), Offset: rng.Float64()}
+			if rng.Float64() < p.JumpShare {
 				op.Kind, op.Pick = OpJump, rng.IntN(WarmupWormholes)
 			} else {
 				op.Kind, op.Pick = OpPatch, rng.IntN(WarmupLines)

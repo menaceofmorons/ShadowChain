@@ -3,6 +3,7 @@ package scenario
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/menaceofmorons/ShadowChain/cmd/loadtest/config"
+	"github.com/menaceofmorons/ShadowChain/internal/store"
 )
 
 const defaultConfig = "../contention.config.json"
@@ -53,7 +55,7 @@ func TestBurstShareRespected(t *testing.T) {
 	rare := 0
 	total := 0
 	for _, w := range BuildPlan(p, 200) {
-		if w.Burst != (w.Index%BurstPeriod == 0) {
+		if w.Burst != (w.Index%p.BurstEveryWindows == 0) {
 			t.Fatalf("window %d burst flag = %v", w.Index, w.Burst)
 		}
 		if !w.Burst {
@@ -98,6 +100,31 @@ func TestBuildPlanCommandKinds(t *testing.T) {
 	for _, k := range []OpKind{OpPaste, OpJump, OpPatch} {
 		if kinds[k] == 0 {
 			t.Fatalf("no %s commands in plan: %v", k, kinds)
+		}
+	}
+}
+
+func TestBackgroundOpsSpreadAcrossWindow(t *testing.T) {
+	p := loadDefault(t).Profile
+	buckets := make([]int, 4)
+	total := 0
+	for _, w := range BuildPlan(p, 20) {
+		for _, op := range w.Background {
+			if op.Offset < 0 || op.Offset >= 1 {
+				t.Fatalf("offset %v outside [0, 1)", op.Offset)
+			}
+			buckets[int(op.Offset*float64(len(buckets)))]++
+			total++
+		}
+		for _, op := range w.Pastes {
+			if op.Offset != 0 {
+				t.Fatalf("burst paste has offset %v, want simultaneous start", op.Offset)
+			}
+		}
+	}
+	for i, n := range buckets {
+		if n < total/8 {
+			t.Fatalf("quarter %d holds %d of %d background ops; offsets are not spread", i, n, total)
 		}
 	}
 }
@@ -186,5 +213,15 @@ func TestRunRejectsInvalidOptions(t *testing.T) {
 	entries, _ := os.ReadDir(opts.TempRoot)
 	if len(entries) != 0 {
 		t.Fatal("invalid options created a data dir")
+	}
+}
+
+func TestFailedCountsBusyAndOtherErrors(t *testing.T) {
+	var c counters
+	c.classify(errors.New("database is locked"))
+	c.classify(errors.New("boom"))
+	c.classify(store.ErrNotFound)
+	if got := c.failed(); got != 2 {
+		t.Fatalf("failed = %d, want 2 (busy + other, not skipped)", got)
 	}
 }
