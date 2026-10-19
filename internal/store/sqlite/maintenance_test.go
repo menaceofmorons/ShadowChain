@@ -241,3 +241,113 @@ func TestMaintenanceFailuresSurfaced(t *testing.T) {
 		t.Fatalf("Run did not record failures: %d, %v", n, last)
 	}
 }
+
+func holdReader(t *testing.T, db *sqlite.DB) func() {
+	t.Helper()
+	ctx := context.Background()
+	conn, err := db.Reader().Conn(ctx)
+	if err != nil {
+		t.Fatalf("reader conn: %v", err)
+	}
+	if _, err := conn.ExecContext(ctx, "BEGIN"); err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	var n int
+	if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM signature").Scan(&n); err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	return func() {
+		if _, err := conn.ExecContext(ctx, "ROLLBACK"); err != nil {
+			t.Errorf("rollback: %v", err)
+		}
+		if err := conn.Close(); err != nil {
+			t.Errorf("close conn: %v", err)
+		}
+	}
+}
+
+func TestCheckpointWithReaderDoesNotStallQueue(t *testing.T) {
+	db := openSeeded(t)
+	stats := &fakeStats{}
+	m := newMaintenance(t, db, stats)
+	ctx := context.Background()
+
+	writeBulk(t, db, 0, 50)
+	release := holdReader(t, db)
+	defer release()
+	writeBulk(t, db, 1000, 5)
+
+	bound := sqlite.CheckpointMaxWait + time.Second
+	var wg sync.WaitGroup
+	results := make([]sqlite.CheckpointResult, 3)
+	for i := range results {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			res, err := m.Checkpoint(ctx)
+			if err != nil {
+				t.Errorf("checkpoint: %v", err)
+			}
+			results[i] = res
+		}()
+	}
+	wg.Wait()
+
+	for i, res := range results {
+		if !res.Busy {
+			t.Errorf("checkpoint %d not busy while reader holds snapshot", i)
+		}
+	}
+	if got := stats.maxQueueWait(); got > bound {
+		t.Errorf("max queue wait %v exceeds bound %v", got, bound)
+	}
+	if m.BusyCheckpoints() != 3 {
+		t.Errorf("busy checkpoints = %d, want 3", m.BusyCheckpoints())
+	}
+}
+
+func TestBusyCheckpointRetriedAfterReaderReleases(t *testing.T) {
+	db := openSeeded(t)
+	m := newMaintenance(t, db, &fakeStats{}).WithCheckpointRetry(20 * time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	writeBulk(t, db, 0, 50)
+	release := holdReader(t, db)
+	writeBulk(t, db, 1000, 5)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = m.Run(ctx, 30*time.Millisecond, time.Hour)
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for m.BusyCheckpoints() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if m.BusyCheckpoints() == 0 {
+		t.Fatal("no busy checkpoint recorded while reader held")
+	}
+	release()
+
+	probe := sqlite.NewMaintenance(sqlite.NewStore(db, &fakeStats{}), nil)
+	for time.Now().Before(deadline) {
+		if size, err := probe.SampleWAL(); err == nil && size == 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	size, err := probe.SampleWAL()
+	if err != nil {
+		t.Fatalf("sample: %v", err)
+	}
+	if size != 0 {
+		t.Errorf("WAL size %d after readers released and retry, want 0", size)
+	}
+	if n, last := m.Failures(); n != 0 {
+		t.Errorf("busy checkpoint counted as failure: %d, %v", n, last)
+	}
+}
