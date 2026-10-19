@@ -34,7 +34,7 @@ You execute either the terminal integration package for one work stream or a rel
 4. **Integration tests:**
    - Derive cumulative scenarios from the package cards and handovers.
    - Implement the automated ones (integration and e2e, e.g. Playwright).
-   - Run the full suites plus `tygo` via `test-runner`.
+   - Run the full suites, plus every `full`-scope Health Checks row that applies, via `test-runner`.
 5. **Integration card:** author it per `dev-testing`, covering end-to-end flows that need human verification. Include every package-card scenario that only makes sense once integrated.
    - **Phase closeout** (the brief has `Regression cards: {path}`): also add a **Regression** section. Search the current card versions anywhere under that path (`Completed/` and earlier phases' `PH-{PH}/` included; never `Archive/`) for tests marked `Regression: Yes ({area})` whose area this phase touched (from the upstream handovers). Copy each in full, headed `from Developer-Tests-{WS}.{K}.{x}, test {n}`, with its Sign-Off reset.
 6. **Finish** per `package-rules`.
@@ -45,7 +45,7 @@ You execute either the terminal integration package for one work stream or a rel
    - Resolve conflicts preserving both sides' specified behaviour; use handovers and shards to decide.
    - For `.claude/skills/codebase-lessons/SKILL.md`, keep both sides' lines.
    - If a conflict needs a design choice, return `BLOCKED`.
-3. **Test:** Run Worktree Setup again, then the full suites plus `tygo` via `test-runner`. Fix only regressions caused by the merge.
+3. **Test:** Run Worktree Setup again, then the full suites, plus every `full`-scope Health Checks row that applies, via `test-runner`. Fix only regressions caused by the merge.
 4. **Finish** per `package-rules`. The handover lists the conflicts and their resolutions.
 
 ## Fix briefs
