@@ -29,10 +29,64 @@ func writeBulk(t *testing.T, db *sqlite.DB, from, n int) {
 	}
 }
 
+func newMaintenance(t *testing.T, db *sqlite.DB, stats *fakeStats) *sqlite.Maintenance {
+	t.Helper()
+	st := sqlite.NewStore(db, stats)
+	t.Cleanup(st.Close)
+	return sqlite.NewMaintenance(st, stats)
+}
+
+func TestCheckpointBusyThenSucceedsThroughQueue(t *testing.T) {
+	db := openSeeded(t)
+	stats := &fakeStats{}
+	m := newMaintenance(t, db, stats)
+	ctx := context.Background()
+
+	writeBulk(t, db, 0, 50)
+	conn, err := db.Reader().Conn(ctx)
+	if err != nil {
+		t.Fatalf("reader conn: %v", err)
+	}
+	if _, err := conn.ExecContext(ctx, "BEGIN"); err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	var n int
+	if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM signature").Scan(&n); err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	writeBulk(t, db, 1000, 5)
+
+	before := stats.queueWaitCount()
+	busy, err := m.Checkpoint(ctx)
+	if err != nil {
+		t.Fatalf("checkpoint while reader open: %v", err)
+	}
+	if !busy.Busy {
+		t.Fatal("checkpoint not busy while a reader holds a WAL snapshot")
+	}
+
+	if _, err := conn.ExecContext(ctx, "ROLLBACK"); err != nil {
+		t.Fatalf("rollback: %v", err)
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatalf("close conn: %v", err)
+	}
+	ok, err := m.Checkpoint(ctx)
+	if err != nil {
+		t.Fatalf("checkpoint after reader closed: %v", err)
+	}
+	if ok.Busy {
+		t.Fatal("checkpoint still busy after reader closed")
+	}
+	if got := stats.queueWaitCount() - before; got != 2 {
+		t.Errorf("checkpoints recorded %d queue waits, want 2", got)
+	}
+}
+
 func TestWALSampling(t *testing.T) {
 	db := openSeeded(t)
 	stats := &fakeStats{}
-	m := sqlite.NewMaintenance(db, stats)
+	m := newMaintenance(t, db, stats)
 
 	writeBulk(t, db, 0, 200)
 	grown, err := m.SampleWAL()
@@ -68,7 +122,7 @@ func TestWALSampling(t *testing.T) {
 func TestCheckpointNotStarvedByReaders(t *testing.T) {
 	db := openSeeded(t)
 	reader := sqlite.NewReader(db, nil)
-	m := sqlite.NewMaintenance(db, nil)
+	m := newMaintenance(t, db, &fakeStats{})
 	ctx := context.Background()
 
 	var stop atomic.Bool
@@ -120,7 +174,7 @@ func TestCheckpointNotStarvedByReaders(t *testing.T) {
 func TestMaintenanceRunOnce(t *testing.T) {
 	db := openSeeded(t)
 	stats := &fakeStats{}
-	m := sqlite.NewMaintenance(db, stats)
+	m := newMaintenance(t, db, stats)
 
 	writeBulk(t, db, 0, 50)
 	if err := m.RunOnce(context.Background()); err != nil {
@@ -134,7 +188,7 @@ func TestMaintenanceRunOnce(t *testing.T) {
 func TestMaintenanceRunStopsOnCancel(t *testing.T) {
 	db := openSeeded(t)
 	stats := &fakeStats{}
-	m := sqlite.NewMaintenance(db, stats)
+	m := newMaintenance(t, db, stats)
 
 	if err := m.Run(context.Background(), 0, time.Second); err == nil {
 		t.Fatal("Run accepted a zero interval")
@@ -162,7 +216,7 @@ func TestMaintenanceRunStopsOnCancel(t *testing.T) {
 
 func TestMaintenanceFailuresSurfaced(t *testing.T) {
 	db := openSeeded(t)
-	m := sqlite.NewMaintenance(db, nil)
+	m := newMaintenance(t, db, &fakeStats{})
 	if n, last := m.Failures(); n != 0 || last != nil {
 		t.Fatalf("fresh failures = %d, %v", n, last)
 	}

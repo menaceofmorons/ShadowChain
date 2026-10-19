@@ -49,8 +49,9 @@ func TestIntegrationHundredTenantsShareOneStack(t *testing.T) {
 
 	stats := sqlite.NewStats()
 	st := sqlite.NewStore(db, stats)
+	t.Cleanup(st.Close)
 	reader := sqlite.NewReader(db, stats)
-	maint := sqlite.NewMaintenance(db, stats)
+	maint := sqlite.NewMaintenance(st, stats)
 
 	helpers, stopHelpers := context.WithCancel(ctx)
 	var helperWG sync.WaitGroup
@@ -83,7 +84,6 @@ func TestIntegrationHundredTenantsShareOneStack(t *testing.T) {
 	wg.Wait()
 	stopHelpers()
 	helperWG.Wait()
-	st.Close()
 	for _, err := range failures {
 		t.Error(err)
 	}
@@ -112,11 +112,11 @@ func TestIntegrationHundredTenantsShareOneStack(t *testing.T) {
 		}
 	}
 
-	if got := stats.WriteLatency().Count; got != int64(wantBatches) {
-		t.Errorf("write latency samples = %d, want %d", got, wantBatches)
+	if got := stats.WriteLatency().Count; got < int64(wantBatches) {
+		t.Errorf("write latency samples = %d, want at least %d", got, wantBatches)
 	}
-	if got := stats.QueueWait().Count; got != int64(wantBatches) {
-		t.Errorf("queue wait samples = %d, want %d", got, wantBatches)
+	if got := stats.QueueWait().Count; got < int64(wantBatches) {
+		t.Errorf("queue wait samples = %d, want at least %d", got, wantBatches)
 	}
 	if stats.SnapshotLatency().Count < int64(wantBatches) {
 		t.Errorf("snapshot samples = %d, want at least %d", stats.SnapshotLatency().Count, wantBatches)

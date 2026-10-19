@@ -203,7 +203,7 @@ func (r *run) execute(ctx context.Context, stats *sqlite.Stats) (Result, error) 
 
 	helpers, stopHelpers := context.WithCancel(ctx)
 	var helperWG sync.WaitGroup
-	maint := sqlite.NewMaintenance(r.db, stats)
+	maint := sqlite.NewMaintenance(r.store, stats)
 	var peak atomic.Int64
 	helperWG.Go(func() { _ = maint.Run(helpers, r.opts.MaintenanceEvery, r.opts.SampleEvery) })
 	helperWG.Go(func() { samplePeak(helpers, maint, &peak) })

@@ -21,10 +21,11 @@ var ErrClosed = errors.New("sqlite: store closed")
 type command func(tx *sql.Tx) error
 
 type job struct {
-	ctx      context.Context
-	enqueued time.Time
-	run      command
-	done     chan error
+	ctx       context.Context
+	enqueued  time.Time
+	run       command
+	exclusive func(ctx context.Context, conn *sql.DB) error
+	done      chan error
 }
 
 type Store struct {
@@ -68,7 +69,15 @@ func (s *Store) Close() {
 }
 
 func (s *Store) execute(ctx context.Context, run command) error {
-	j := &job{ctx: ctx, enqueued: time.Now(), run: run, done: make(chan error, 1)}
+	return s.enqueue(&job{ctx: ctx, enqueued: time.Now(), run: run, done: make(chan error, 1)})
+}
+
+func (s *Store) executeExclusive(ctx context.Context, run func(ctx context.Context, conn *sql.DB) error) error {
+	return s.enqueue(&job{ctx: ctx, enqueued: time.Now(), exclusive: run, done: make(chan error, 1)})
+}
+
+func (s *Store) enqueue(j *job) error {
+	ctx := j.ctx
 	s.mu.RLock()
 	if s.closed {
 		s.mu.RUnlock()
@@ -97,6 +106,9 @@ func (s *Store) writerLoop() {
 func (s *Store) runJob(j *job) error {
 	if err := j.ctx.Err(); err != nil {
 		return err
+	}
+	if j.exclusive != nil {
+		return j.exclusive(j.ctx, s.db.Writer())
 	}
 	tx, err := s.db.Writer().BeginTx(j.ctx, nil)
 	if err != nil {

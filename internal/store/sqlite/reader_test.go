@@ -16,9 +16,21 @@ type fakeStats struct {
 	mu        sync.Mutex
 	snapshots []time.Duration
 	walSizes  []int64
+	waits     int
 }
 
-func (f *fakeStats) RecordQueueWait(time.Duration)    {}
+func (f *fakeStats) RecordQueueWait(time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.waits++
+}
+
+func (f *fakeStats) queueWaitCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.waits
+}
+
 func (f *fakeStats) RecordWriteLatency(time.Duration) {}
 func (f *fakeStats) RecordSnapshotLatency(d time.Duration) {
 	f.mu.Lock()

@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -23,6 +24,7 @@ type CheckpointResult struct {
 }
 
 type Maintenance struct {
+	store *Store
 	db    *DB
 	stats store.StatsRecorder
 
@@ -47,8 +49,8 @@ func (m *Maintenance) recordFailure(err error) {
 	m.mu.Unlock()
 }
 
-func NewMaintenance(db *DB, stats store.StatsRecorder) *Maintenance {
-	return &Maintenance{db: db, stats: stats}
+func NewMaintenance(st *Store, stats store.StatsRecorder) *Maintenance {
+	return &Maintenance{store: st, db: st.db, stats: stats}
 }
 
 func (m *Maintenance) SampleWAL() (int64, error) {
@@ -67,20 +69,30 @@ func (m *Maintenance) SampleWAL() (int64, error) {
 }
 
 func (m *Maintenance) Optimize(ctx context.Context) error {
-	if _, err := m.db.Writer().ExecContext(ctx, "PRAGMA optimize"); err != nil {
+	err := m.store.executeExclusive(ctx, func(ctx context.Context, conn *sql.DB) error {
+		_, err := conn.ExecContext(ctx, "PRAGMA optimize")
+		return err
+	})
+	if err != nil {
 		return fmt.Errorf("sqlite: optimize: %w", err)
 	}
 	return nil
 }
 
 func (m *Maintenance) Checkpoint(ctx context.Context) (CheckpointResult, error) {
-	var busy int
 	var res CheckpointResult
-	row := m.db.Writer().QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)")
-	if err := row.Scan(&busy, &res.LogFrames, &res.Checkpointed); err != nil {
+	err := m.store.executeExclusive(ctx, func(ctx context.Context, conn *sql.DB) error {
+		var busy int
+		row := conn.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)")
+		if err := row.Scan(&busy, &res.LogFrames, &res.Checkpointed); err != nil {
+			return err
+		}
+		res.Busy = busy != 0
+		return nil
+	})
+	if err != nil {
 		return CheckpointResult{}, fmt.Errorf("sqlite: wal checkpoint: %w", err)
 	}
-	res.Busy = busy != 0
 	return res, nil
 }
 
