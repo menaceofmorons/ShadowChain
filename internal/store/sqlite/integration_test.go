@@ -31,7 +31,16 @@ func integrationLines(tenant, round int) []store.PasteLine {
 	return lines
 }
 
-func TestIntegrationHundredTenantsShareOneStack(t *testing.T) {
+type integrationStack struct {
+	db     *sqlite.DB
+	stats  *sqlite.Stats
+	store  *sqlite.Store
+	reader *sqlite.Reader
+	maint  *sqlite.Maintenance
+}
+
+func openIntegrationStack(t *testing.T) integrationStack {
+	t.Helper()
 	ctx := context.Background()
 	db, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "integration.db"), sqlite.Options{})
 	if err != nil {
@@ -46,17 +55,15 @@ func TestIntegrationHundredTenantsShareOneStack(t *testing.T) {
 			t.Fatalf("tenant %d: %v", id, err)
 		}
 	}
-
 	stats := sqlite.NewStats()
 	st := sqlite.NewStore(db, stats)
 	t.Cleanup(st.Close)
-	reader := sqlite.NewReader(db, stats)
-	maint := sqlite.NewMaintenance(st, stats)
+	return integrationStack{db: db, stats: stats, store: st, reader: sqlite.NewReader(db, stats), maint: sqlite.NewMaintenance(st, stats)}
+}
 
-	helpers, stopHelpers := context.WithCancel(ctx)
-	var helperWG sync.WaitGroup
-	helperWG.Go(func() { _ = maint.Run(helpers, 50*time.Millisecond, 10*time.Millisecond) })
-
+func runIntegrationWorkload(t *testing.T, stack integrationStack) {
+	t.Helper()
+	ctx := context.Background()
 	var (
 		mu       sync.Mutex
 		failures []error
@@ -72,21 +79,33 @@ func TestIntegrationHundredTenantsShareOneStack(t *testing.T) {
 		wg.Go(func() {
 			for round := range integrationRounds {
 				cmd := store.PasteCommand{SystemID: store.SystemID(30000000 + tenant), Actor: actor, Lines: integrationLines(tenant, round)}
-				if _, err := st.ApplyPaste(ctx, store.TenantID(tenant), cmd); err != nil {
+				if _, err := stack.store.ApplyPaste(ctx, store.TenantID(tenant), cmd); err != nil {
 					fail(fmt.Errorf("paste tenant %d round %d: %w", tenant, round, err))
 				}
-				if _, err := reader.ReadSnapshot(ctx, store.TenantID(tenant)); err != nil {
+				if _, err := stack.reader.ReadSnapshot(ctx, store.TenantID(tenant)); err != nil {
 					fail(fmt.Errorf("snapshot tenant %d: %w", tenant, err))
 				}
 			}
 		})
 	}
 	wg.Wait()
-	stopHelpers()
-	helperWG.Wait()
 	for _, err := range failures {
 		t.Error(err)
 	}
+}
+
+func TestIntegrationHundredTenantsShareOneStack(t *testing.T) {
+	ctx := context.Background()
+	stack := openIntegrationStack(t)
+	db, stats, reader, maint := stack.db, stack.stats, stack.reader, stack.maint
+
+	helpers, stopHelpers := context.WithCancel(ctx)
+	var helperWG sync.WaitGroup
+	helperWG.Go(func() { _ = maint.Run(helpers, 50*time.Millisecond, 10*time.Millisecond) })
+
+	runIntegrationWorkload(t, stack)
+	stopHelpers()
+	helperWG.Wait()
 
 	wantBatches := integrationTenants * integrationRounds
 	var batches int
@@ -129,8 +148,9 @@ func TestIntegrationHundredTenantsShareOneStack(t *testing.T) {
 		t.Errorf("read pool = %d, want %d..%d", size, sqlite.MinReadPool, sqlite.MaxReadPool)
 	}
 
-	if _, err := maint.Checkpoint(ctx); err != nil {
-		t.Fatalf("checkpoint: %v", err)
+	res, err := maint.Checkpoint(ctx)
+	if err != nil || res.Busy {
+		t.Fatalf("checkpoint with no readers: %+v, %v", res, err)
 	}
 	after, err := maint.SampleWAL()
 	if err != nil {
@@ -138,5 +158,74 @@ func TestIntegrationHundredTenantsShareOneStack(t *testing.T) {
 	}
 	if after != 0 || stats.WALSize() != 0 {
 		t.Errorf("WAL after TRUNCATE checkpoint = %d (stats %d), want 0", after, stats.WALSize())
+	}
+}
+
+func TestIntegrationHeldReaderNeverStallsWritersAndWALRecovers(t *testing.T) {
+	ctx := context.Background()
+	stack := openIntegrationStack(t)
+	maint := stack.maint.WithCheckpointRetry(20 * time.Millisecond)
+
+	conn, err := stack.db.Reader().Conn(ctx)
+	if err != nil {
+		t.Fatalf("reader conn: %v", err)
+	}
+	if _, err := conn.ExecContext(ctx, "BEGIN"); err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	var held int
+	if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM signature").Scan(&held); err != nil {
+		t.Fatalf("hold snapshot: %v", err)
+	}
+	released := false
+	release := func() {
+		if released {
+			return
+		}
+		released = true
+		if _, err := conn.ExecContext(ctx, "ROLLBACK"); err != nil {
+			t.Errorf("rollback: %v", err)
+		}
+		_ = conn.Close()
+	}
+	defer release()
+
+	helpers, stopHelpers := context.WithCancel(ctx)
+	var helperWG sync.WaitGroup
+	helperWG.Go(func() { _ = maint.Run(helpers, 30*time.Millisecond, 10*time.Millisecond) })
+	defer func() {
+		stopHelpers()
+		helperWG.Wait()
+	}()
+
+	runIntegrationWorkload(t, stack)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for maint.BusyCheckpoints() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if maint.BusyCheckpoints() == 0 {
+		t.Fatal("no busy TRUNCATE recorded while a reader held the WAL")
+	}
+	bound := sqlite.CheckpointMaxWait + time.Second
+	if max := stack.stats.QueueWait().Max; max > bound {
+		t.Errorf("max queue wait %v with a reader holding the WAL, want within %v", max, bound)
+	}
+	if size, err := maint.SampleWAL(); err != nil || size == 0 {
+		t.Fatalf("WAL size %d (%v) while reader held, want it pinned above zero", size, err)
+	}
+
+	release()
+	for time.Now().Before(deadline) {
+		if size, err := maint.SampleWAL(); err == nil && size == 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if size, err := maint.SampleWAL(); err != nil || size != 0 {
+		t.Errorf("WAL size %d (%v) after reader released, want 0 from the retried TRUNCATE", size, err)
+	}
+	if n, last := maint.Failures(); n != 0 {
+		t.Errorf("busy checkpoints counted as failures: %d, %v", n, last)
 	}
 }
