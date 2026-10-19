@@ -43,6 +43,9 @@ func TestConfigDefaultsLoad(t *testing.T) {
 		p.PasteSizeMin != 10 || p.PasteSizeMax != 20 || p.RarePasteSizeMin != 30 || p.RarePasteSizeMax != 40 || p.RarePasteShare != 0.05 {
 		t.Fatalf("profile: %+v", p)
 	}
+	if p.WindowMillis != 1000 || p.BurstEveryWindows != 2 || p.BackgroundOpChance != 0.2 || p.JumpShare != 0.7 || p.SnapshotReaders != 4 {
+		t.Fatalf("pacing: %+v", p)
+	}
 }
 
 func TestConfigRejectsInvalid(t *testing.T) {
@@ -74,7 +77,7 @@ func TestConfigRejectsInvalid(t *testing.T) {
 }
 
 func TestOverrideRejectsInvalid(t *testing.T) {
-	for _, set := range []string{"nokey", "thresholds.nope=1", "other.x=1", "thresholds.snapshotP95Ms=abc", "thresholds.snapshotP95Ms=-3", "profile.burstShare=2", "profile.durationMinutes=NaN", "profile.burstShare=NaN", "thresholds.snapshotP95Ms=NaN", "thresholds.snapshotP95Ms=Inf", "thresholds.snapshotP95Ms=-Inf", "profile.pasteSizeMax=501", "profile.rarePasteSizeMax=501"} {
+	for _, set := range []string{"nokey", "thresholds.nope=1", "other.x=1", "thresholds.snapshotP95Ms=abc", "thresholds.snapshotP95Ms=-3", "profile.burstShare=2", "profile.durationMinutes=NaN", "profile.burstShare=NaN", "thresholds.snapshotP95Ms=NaN", "thresholds.snapshotP95Ms=Inf", "thresholds.snapshotP95Ms=-Inf", "profile.pasteSizeMax=501", "profile.rarePasteSizeMax=501", "profile.windowMillis=0", "profile.burstEveryWindows=0", "profile.backgroundOpChance=1.5", "profile.jumpShare=-0.1", "profile.snapshotReaders=0"} {
 		if _, err := Load(defaultPath, []string{set}); err == nil {
 			t.Errorf("%q accepted", set)
 		}
