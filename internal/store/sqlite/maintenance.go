@@ -15,6 +15,11 @@ import (
 const (
 	DefaultMaintenanceInterval = 5 * time.Minute
 	DefaultWALSampleInterval   = 10 * time.Second
+
+	// TUNE: longest the TRUNCATE checkpoint may hold the writer queue waiting for readers; a few busy-handler polls.
+	CheckpointMaxWait = 100 * time.Millisecond
+	// TUNE: delay before retrying a busy TRUNCATE checkpoint; short enough to clear the WAL soon after readers release.
+	DefaultCheckpointRetryInterval = 10 * time.Second
 )
 
 type CheckpointResult struct {
@@ -31,6 +36,38 @@ type Maintenance struct {
 	mu        sync.Mutex
 	failures  int64
 	lastError error
+
+	busyCheckpoints int64
+	truncatePending bool
+	checkpointRetry time.Duration
+}
+
+func (m *Maintenance) WithCheckpointRetry(d time.Duration) *Maintenance {
+	m.mu.Lock()
+	m.checkpointRetry = d
+	m.mu.Unlock()
+	return m
+}
+
+func (m *Maintenance) BusyCheckpoints() int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.busyCheckpoints
+}
+
+func (m *Maintenance) recordCheckpoint(busy bool) {
+	m.mu.Lock()
+	m.truncatePending = busy
+	if busy {
+		m.busyCheckpoints++
+	}
+	m.mu.Unlock()
+}
+
+func (m *Maintenance) retryState() (pending bool, every time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.truncatePending, m.checkpointRetry
 }
 
 func (m *Maintenance) Failures() (count int64, last error) {
@@ -50,7 +87,7 @@ func (m *Maintenance) recordFailure(err error) {
 }
 
 func NewMaintenance(st *Store, stats store.StatsRecorder) *Maintenance {
-	return &Maintenance{store: st, db: st.db, stats: stats}
+	return &Maintenance{store: st, db: st.db, stats: stats, checkpointRetry: DefaultCheckpointRetryInterval}
 }
 
 func (m *Maintenance) SampleWAL() (int64, error) {
@@ -82,18 +119,43 @@ func (m *Maintenance) Optimize(ctx context.Context) error {
 func (m *Maintenance) Checkpoint(ctx context.Context) (CheckpointResult, error) {
 	var res CheckpointResult
 	err := m.store.executeExclusive(ctx, func(ctx context.Context, conn *sql.DB) error {
-		var busy int
-		row := conn.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)")
-		if err := row.Scan(&busy, &res.LogFrames, &res.Checkpointed); err != nil {
-			return err
-		}
-		res.Busy = busy != 0
-		return nil
+		var err error
+		res, err = boundedCheckpoint(ctx, conn)
+		return err
 	})
 	if err != nil {
 		return CheckpointResult{}, fmt.Errorf("sqlite: wal checkpoint: %w", err)
 	}
+	m.recordCheckpoint(res.Busy)
 	return res, nil
+}
+
+func boundedCheckpoint(ctx context.Context, db *sql.DB) (CheckpointResult, error) {
+	var res CheckpointResult
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return res, err
+	}
+	defer func() { _ = conn.Close() }()
+
+	var busy int
+	if err := conn.QueryRowContext(ctx, "PRAGMA wal_checkpoint(PASSIVE)").Scan(&busy, &res.LogFrames, &res.Checkpointed); err != nil {
+		return res, err
+	}
+	if err := setBusyTimeout(ctx, conn, CheckpointMaxWait.Milliseconds()); err != nil {
+		return res, err
+	}
+	defer func() { _ = setBusyTimeout(context.Background(), conn, BusyTimeoutMillis) }()
+	if err := conn.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &res.LogFrames, &res.Checkpointed); err != nil {
+		return res, err
+	}
+	res.Busy = busy != 0
+	return res, nil
+}
+
+func setBusyTimeout(ctx context.Context, conn *sql.Conn, millis int64) error {
+	_, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout = %d", millis))
+	return err
 }
 
 func (m *Maintenance) RunOnce(ctx context.Context) error {
@@ -114,10 +176,23 @@ func (m *Maintenance) Run(ctx context.Context, maintenanceEvery, sampleEvery tim
 	defer maintenance.Stop()
 	sample := time.NewTicker(sampleEvery)
 	defer sample.Stop()
+	_, retryEvery := m.retryState()
+	if retryEvery <= 0 {
+		return errors.New("sqlite: checkpoint retry interval must be positive")
+	}
+	retry := time.NewTicker(retryEvery)
+	defer retry.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-retry.C:
+			if pending, _ := m.retryState(); pending {
+				_, err := m.Checkpoint(ctx)
+				if ctx.Err() == nil {
+					m.recordFailure(err)
+				}
+			}
 		case <-sample.C:
 			_, err := m.SampleWAL()
 			m.recordFailure(err)
