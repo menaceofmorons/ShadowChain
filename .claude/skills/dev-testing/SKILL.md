@@ -36,18 +36,24 @@ Cards cover only verification that automation cannot do:
 The highest version is always self-contained. When you write version `x+1`, **move version `x` to the `Archive/` folder beside it**, so only the current card stays open.
 
 **Rules for every test:**
+- If you can't state **Why a human**, automate the test instead of carding it.
 - Give exact commands and steps, the expected output, and a plain-text explanation of what to do. Tests must be repeatable, observable, objective and executable; nothing left to guessing.
 - **State-modifying tests** (env vars, DB contents, config files, app settings) must record the original state, execute, then restore it, with the rollback steps written out explicitly.
 - Put every parameter, code snippet, script, command, and directory path to be copied or run in a fenced block.
 - **Regression tag:** mark each test `Regression: Yes ({area})` when it verifies lasting behaviour that later work could break (e.g. canvas performance, tenant isolation, a core user flow). Mark `Regression: No` for one-off checks (a migration ran, first-run state) and setup or environment checks. The phase closeout reuses `Yes` tests whose area the phase touched.
 
-**Card structure** (repeat per test, numbered sequentially):
+**Card structure** (header once, then each test numbered sequentially):
 
 ```Markdown
+**Run from:** {the brief's Lead worktree path}
+**Shared setup:** {steps common to all tests, run once; record any state to restore}
+
 # 1. {Test Name}
+- **Why a human:** [what the Developer judges that automation cannot, and which automated test covers the rest]
 - **Objective:** [Goal of verification]
-- **Setup:** [Environment launch commands, seed steps, client setup, record state]
+- **Setup:** [test-specific steps only; reuse earlier tests' output rather than re-running]
 - **Verification Script:** [Checklist of steps with expected visual/system reactions]
+- **Pass / Fail:** [what a pass looks like; what a failure looks like]
 - **Rollback:** [If required, return to original state]
 - **Regression:** Yes ({area}) / No
 - **Sign-Off:** [ ] Approved / [ ] Changes Requested
