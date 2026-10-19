@@ -27,6 +27,7 @@ metadata:
 - `go/parser.ParseDir` is deprecated; walk `os.ReadDir` and call `parser.ParseFile` (WS-1.6)
 - Go 1.27 has `sync.WaitGroup.Go`; use it for goroutine fan-out (WS-1.6)
 - `cmd/loadtest` full profile takes ~10 min; run seeds sequentially so runs don't distort each other's latency (WS-1.6)
+- The git guard hook refuses `git -C <path>` in agent shells; run git from the worktree cwd (WS-1.6)
 - Agent shells block foreground `sleep`; for a long wait use `ping -n N 127.0.0.1` (WS-1.6)
 
 ### Conventions
