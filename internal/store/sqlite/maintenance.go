@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/menaceofmorons/ShadowChain/internal/store"
@@ -24,6 +25,26 @@ type CheckpointResult struct {
 type Maintenance struct {
 	db    *DB
 	stats store.StatsRecorder
+
+	mu        sync.Mutex
+	failures  int64
+	lastError error
+}
+
+func (m *Maintenance) Failures() (count int64, last error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.failures, m.lastError
+}
+
+func (m *Maintenance) recordFailure(err error) {
+	if err == nil {
+		return
+	}
+	m.mu.Lock()
+	m.failures++
+	m.lastError = err
+	m.mu.Unlock()
 }
 
 func NewMaintenance(db *DB, stats store.StatsRecorder) *Maintenance {
@@ -86,9 +107,12 @@ func (m *Maintenance) Run(ctx context.Context, maintenanceEvery, sampleEvery tim
 		case <-ctx.Done():
 			return nil
 		case <-sample.C:
-			_, _ = m.SampleWAL()
+			_, err := m.SampleWAL()
+			m.recordFailure(err)
 		case <-maintenance.C:
-			_ = m.RunOnce(ctx)
+			if err := m.RunOnce(ctx); ctx.Err() == nil {
+				m.recordFailure(err)
+			}
 		}
 	}
 }
