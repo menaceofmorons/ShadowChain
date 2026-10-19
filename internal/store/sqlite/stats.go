@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"math"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -16,12 +17,14 @@ type latencyWindow struct {
 	samples []time.Duration
 	next    int
 	count   int64
+	max     time.Duration
 }
 
 func (w *latencyWindow) record(d time.Duration) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.count++
+	w.max = max(w.max, d)
 	if len(w.samples) < maxLatencySamples {
 		w.samples = append(w.samples, d)
 		return
@@ -34,22 +37,25 @@ func (w *latencyWindow) summary() store.LatencySummary {
 	w.mu.Lock()
 	sorted := slices.Clone(w.samples)
 	count := w.count
+	maxSeen := w.max
 	w.mu.Unlock()
 	if len(sorted) == 0 {
 		return store.LatencySummary{}
 	}
 	slices.Sort(sorted)
 	return store.LatencySummary{
-		Count: count,
-		P50:   percentile(sorted, 0.50),
-		P95:   percentile(sorted, 0.95),
-		P99:   percentile(sorted, 0.99),
-		Max:   sorted[len(sorted)-1],
+		Count:     count,
+		P50:       percentile(sorted, 0.50),
+		P95:       percentile(sorted, 0.95),
+		P99:       percentile(sorted, 0.99),
+		Max:       maxSeen,
+		Truncated: count > int64(len(sorted)),
 	}
 }
 
 func percentile(sorted []time.Duration, p float64) time.Duration {
-	return sorted[int(float64(len(sorted)-1)*p)]
+	rank := int(math.Ceil(p * float64(len(sorted))))
+	return sorted[min(max(rank, 1), len(sorted))-1]
 }
 
 type Stats struct {
