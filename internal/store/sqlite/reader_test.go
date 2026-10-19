@@ -17,20 +17,12 @@ type fakeStats struct {
 	snapshots []time.Duration
 	walSizes  []int64
 	waits     int
-	maxWait   time.Duration
 }
 
-func (f *fakeStats) RecordQueueWait(d time.Duration) {
+func (f *fakeStats) RecordQueueWait(time.Duration) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.waits++
-	f.maxWait = max(f.maxWait, d)
-}
-
-func (f *fakeStats) maxQueueWait() time.Duration {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.maxWait
 }
 
 func (f *fakeStats) queueWaitCount() int {
