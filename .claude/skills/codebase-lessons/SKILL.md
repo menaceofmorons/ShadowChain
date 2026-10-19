@@ -22,7 +22,7 @@ metadata:
 - Fresh worktrees have no `web/node_modules`; run `npm install --prefix web` before build or tests (WS-1.1)
 - `web` has no `@types/node`; read source files in tests via Vite `import.meta.glob(..., {query: "?raw"})`, not `node:fs` (WS-1.1)
 - golangci-lint 2.x config (`.golangci.yml`) requires `version: "2"` (WS-1.6)
-- `gofmt -l` flags every Go file on Windows (CRLF checkout); rely on golangci-lint instead (WS-1.6)
+- Repo Go files are CRLF on Windows: `gofmt -l` flags every file (rely on golangci-lint), and scripted edits must preserve CRLF (WS-1.6)
 - Go `-race` is unavailable on this machine (no cgo) (WS-1.6)
 - `go/parser.ParseDir` is deprecated; walk `os.ReadDir` and call `parser.ParseFile` (WS-1.6)
 - Go 1.27 has `sync.WaitGroup.Go`; use it for goroutine fan-out (WS-1.6)
