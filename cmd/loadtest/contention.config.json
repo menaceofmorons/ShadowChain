@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "thresholds": {
+    "writerQueueWaitP99Ms": 50,
+    "writerQueueWaitMaxMs": 250,
+    "writeLatencyP95Ms": 100,
+    "snapshotP95Ms": 500,
+    "walPeakMB": 256,
+    "walPostCheckpointMB": 64,
+    "busyErrors": 0
+  },
+  "profile": {
+    "tenants": 100,
+    "characters": 500,
+    "durationMinutes": 10,
+    "burstShare": 0.2,
+    "pasteSizeMin": 10,
+    "pasteSizeMax": 20,
+    "rarePasteSizeMin": 30,
+    "rarePasteSizeMax": 40,
+    "rarePasteShare": 0.05,
+    "seed": 1
+  }
+}
