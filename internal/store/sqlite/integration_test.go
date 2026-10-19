@@ -229,3 +229,26 @@ func TestIntegrationHeldReaderNeverStallsWritersAndWALRecovers(t *testing.T) {
 		t.Errorf("busy checkpoints counted as failures: %d, %v", n, last)
 	}
 }
+
+func TestIntegrationMaintenanceNeverCountsAsWriteCommand(t *testing.T) {
+	ctx := context.Background()
+	stack := openIntegrationStack(t)
+	runIntegrationWorkload(t, stack)
+
+	queueBefore, latencyBefore := stack.stats.QueueWait().Count, stack.stats.WriteLatency().Count
+	if queueBefore == 0 || latencyBefore == 0 {
+		t.Fatalf("workload recorded no write samples: queue %d, latency %d", queueBefore, latencyBefore)
+	}
+	if _, err := stack.maint.Checkpoint(ctx); err != nil {
+		t.Fatalf("checkpoint: %v", err)
+	}
+	if err := stack.maint.RunOnce(ctx); err != nil {
+		t.Fatalf("run once: %v", err)
+	}
+	if got := stack.stats.QueueWait().Count; got != queueBefore {
+		t.Errorf("queue wait samples %d after maintenance, want %d: maintenance must not count as a write command", got, queueBefore)
+	}
+	if got := stack.stats.WriteLatency().Count; got != latencyBefore {
+		t.Errorf("write latency samples %d after maintenance, want %d", got, latencyBefore)
+	}
+}

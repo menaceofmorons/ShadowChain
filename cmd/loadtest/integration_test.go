@@ -218,3 +218,51 @@ func TestIntegrationTextReportListsEveryRequiredMetric(t *testing.T) {
 		}
 	}
 }
+
+func TestIntegrationReportsBusyCheckpointCount(t *testing.T) {
+	args := append([]string{"-json", "-short", "-config", testConfigPath}, relaxedLatency...)
+	var stdout, stderr bytes.Buffer
+	if code := run(args, &stdout, &stderr); code != exitOK {
+		t.Fatalf("exit = %d\n%s%s", code, stdout.String(), stderr.String())
+	}
+	var raw struct {
+		Counts map[string]json.Number `json:"counts"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &raw); err != nil {
+		t.Fatalf("decode json: %v", err)
+	}
+	for _, key := range []string{"busyCheckpoints", "maintenanceFailures", "otherErrors", "busy", "snapshots"} {
+		if _, ok := raw.Counts[key]; !ok {
+			t.Errorf("json counts has no %q: %v", key, raw.Counts)
+		}
+	}
+	if got := raw.Counts["busyCheckpoints"].String(); got != "0" {
+		t.Errorf("busyCheckpoints = %s with no reader holding the WAL, want 0", got)
+	}
+
+	stdout.Reset()
+	if code := run(append([]string{"-short", "-config", testConfigPath}, relaxedLatency...), &stdout, &stderr); code != exitOK {
+		t.Fatalf("text run exit = %d\n%s%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{"busyCheckpoints=0", "maintenanceFailures=0"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("text report missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestIntegrationTextReportListsEveryProfileKey(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	args := append([]string{"-short", "-config", testConfigPath, "-set", "profile.snapshotsPerSecond=5"}, relaxedLatency...)
+	if code := run(args, &stdout, &stderr); code != exitOK {
+		t.Fatalf("exit = %d\n%s%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		"tenants=", "characters=", "durationMinutes=", "burstShare=", "pasteSize=", "rarePasteSize=", "rarePasteShare=",
+		"seed=", "windowMillis=", "burstEveryWindows=", "backgroundOpChance=", "jumpShare=", "snapshotsPerSecond=5",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("text report header missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
