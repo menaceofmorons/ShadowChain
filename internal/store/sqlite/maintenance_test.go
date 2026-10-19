@@ -159,3 +159,31 @@ func TestMaintenanceRunStopsOnCancel(t *testing.T) {
 		t.Error("Run recorded no WAL samples")
 	}
 }
+
+func TestMaintenanceFailuresSurfaced(t *testing.T) {
+	db := openSeeded(t)
+	m := sqlite.NewMaintenance(db, nil)
+	if n, last := m.Failures(); n != 0 || last != nil {
+		t.Fatalf("fresh failures = %d, %v", n, last)
+	}
+
+	runCtx, stop := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = m.Run(runCtx, 5*time.Millisecond, time.Hour)
+	}()
+	_ = db.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if n, _ := m.Failures(); n > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	stop()
+	<-done
+	if n, last := m.Failures(); n == 0 || last == nil {
+		t.Fatalf("Run did not record failures: %d, %v", n, last)
+	}
+}

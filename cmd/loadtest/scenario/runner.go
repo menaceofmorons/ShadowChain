@@ -80,6 +80,7 @@ type Counts struct {
 	Skipped             int64 `json:"skipped"`
 	Busy                int64 `json:"busy"`
 	OtherErrors         int64 `json:"otherErrors"`
+	MaintenanceFailures int64 `json:"maintenanceFailures"`
 	QueueWaitSamples    int64 `json:"queueWaitSamples"`
 	WriteLatencySamples int64 `json:"writeLatencySamples"`
 	SnapshotSamples     int64 `json:"snapshotSamples"`
@@ -95,7 +96,7 @@ type Result struct {
 	Report       report.Report `json:"report"`
 }
 
-func (r Result) Healthy() bool { return r.Report.Pass && r.Counts.OtherErrors == 0 }
+func (r Result) Healthy() bool { return r.Report.Pass && r.Counts.OtherErrors == 0 && r.Counts.MaintenanceFailures == 0 }
 
 type counters struct {
 	pastes, pasteLines, jumps, patches, snapshots, skipped, busy, other atomic.Int64
@@ -239,6 +240,8 @@ func (r *run) execute(ctx context.Context, stats *sqlite.Stats) (Result, error) 
 	m := report.FromStats(stats, postCheckpoint, r.counters.busy.Load())
 	m.WALPeakBytes = peak.Load()
 	counts := r.snapshotCounts(m)
+	var maintErr error
+	counts.MaintenanceFailures, maintErr = maint.Failures()
 	res := Result{
 		Seed:         p.Seed,
 		Windows:      windows,
@@ -248,6 +251,8 @@ func (r *run) execute(ctx context.Context, stats *sqlite.Stats) (Result, error) 
 	}
 	if msg := r.counters.firstError.Load(); msg != nil {
 		res.FirstError = *msg
+	} else if maintErr != nil {
+		res.FirstError = maintErr.Error()
 	}
 	return res, nil
 }
