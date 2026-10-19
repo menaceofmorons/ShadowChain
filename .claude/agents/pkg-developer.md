@@ -1,7 +1,7 @@
 ---
 name: pkg-developer
 description: Implements one atomic package (PKG-{WS}.{K}) from a Team Lead brief. Spawned only by the Team Lead under #T-TLO.
-tools: Read, Write, Edit, Glob, Grep, Bash, PowerShell, Agent
+tools: Read, Write, Edit, Glob, Grep, Bash, PowerShell, Agent, WebFetch
 model: sonnet
 effort: medium
 isolation: worktree

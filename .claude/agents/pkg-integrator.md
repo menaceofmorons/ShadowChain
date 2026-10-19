@@ -1,7 +1,7 @@
 ---
 name: pkg-integrator
 description: Executes the terminal integration package (PKG-{WS}.Integration), or a release sync of #GR into the work stream branch, from a Team Lead brief. Spawned only by the Team Lead under #T-TLO.
-tools: Read, Write, Edit, Glob, Grep, Bash, PowerShell, Agent
+tools: Read, Write, Edit, Glob, Grep, Bash, PowerShell, Agent, WebFetch
 model: sonnet
 effort: high
 isolation: worktree

@@ -37,6 +37,7 @@ Run Config's Worktree Setup commands before any build. If one fails because a lo
   - change behaviour outside scope;
   - introduce new architecture.
 - A required local file is missing, or a task needs an excluded directory (`project-rules`).
+- A command is refused by a hook or permission rule. Never rephrase, split or disguise it to get past the refusal; return the exact refusal text.
 
 Give the question, 2–3 options and your recommendation. Leave the worktree as is; you will be resumed with the answer.
 
