@@ -74,7 +74,7 @@ func TestConfigRejectsInvalid(t *testing.T) {
 }
 
 func TestOverrideRejectsInvalid(t *testing.T) {
-	for _, set := range []string{"nokey", "thresholds.nope=1", "other.x=1", "thresholds.snapshotP95Ms=abc", "thresholds.snapshotP95Ms=-3", "profile.burstShare=2"} {
+	for _, set := range []string{"nokey", "thresholds.nope=1", "other.x=1", "thresholds.snapshotP95Ms=abc", "thresholds.snapshotP95Ms=-3", "profile.burstShare=2", "profile.durationMinutes=NaN", "profile.burstShare=NaN", "thresholds.snapshotP95Ms=NaN", "thresholds.snapshotP95Ms=Inf", "thresholds.snapshotP95Ms=-Inf", "profile.pasteSizeMax=501", "profile.rarePasteSizeMax=501"} {
 		if _, err := Load(defaultPath, []string{set}); err == nil {
 			t.Errorf("%q accepted", set)
 		}

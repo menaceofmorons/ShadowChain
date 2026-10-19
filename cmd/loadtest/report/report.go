@@ -21,12 +21,12 @@ type Measurements struct {
 	BusyErrors             int64
 }
 
-func FromStats(s store.StatsReader, walPostCheckpointBytes, busyErrors int64) Measurements {
+func FromStats(s store.StatsReader, walPeakBytes, walPostCheckpointBytes, busyErrors int64) Measurements {
 	return Measurements{
 		QueueWait:              s.QueueWait(),
 		WriteLatency:           s.WriteLatency(),
 		SnapshotLatency:        s.SnapshotLatency(),
-		WALPeakBytes:           s.WALSize(),
+		WALPeakBytes:           walPeakBytes,
 		WALPostCheckpointBytes: walPostCheckpointBytes,
 		BusyErrors:             busyErrors,
 	}
