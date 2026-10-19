@@ -43,7 +43,7 @@ type Profile struct {
 	BurstEveryWindows  int     `json:"burstEveryWindows"`
 	BackgroundOpChance float64 `json:"backgroundOpChance"`
 	JumpShare          float64 `json:"jumpShare"`
-	SnapshotReaders    int     `json:"snapshotReaders"`
+	SnapshotsPerSecond  float64 `json:"snapshotsPerSecond"`
 }
 
 type Config struct {
@@ -245,8 +245,8 @@ func (c Config) Validate() error {
 	if p.JumpShare < 0 || p.JumpShare > 1 {
 		bad("profile.jumpShare must be in [0, 1]")
 	}
-	if p.SnapshotReaders <= 0 {
-		bad("profile.snapshotReaders must be positive")
+	if p.SnapshotsPerSecond <= 0 || math.IsNaN(p.SnapshotsPerSecond) || math.IsInf(p.SnapshotsPerSecond, 0) {
+		bad("profile.snapshotsPerSecond must be positive and finite")
 	}
 	if p.PasteSizeMin <= 0 || p.PasteSizeMax < p.PasteSizeMin || p.PasteSizeMax > store.MaxPasteLines {
 		bad("profile.pasteSizeMin/pasteSizeMax must satisfy 0 < min <= max <= %d", store.MaxPasteLines)

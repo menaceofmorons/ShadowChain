@@ -24,6 +24,6 @@
     "burstEveryWindows": 2,
     "backgroundOpChance": 0.2,
     "jumpShare": 0.7,
-    "snapshotReaders": 4
+    "snapshotsPerSecond": 100
   }
 }

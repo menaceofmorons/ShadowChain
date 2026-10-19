@@ -18,6 +18,7 @@ const (
 	codeSpace        = 2000
 	codeStride       = 7
 	seedMix          = 0x9e3779b97f4a7c15
+	snapshotSeedMix  = 0x5851f42d4c957f2d
 )
 
 type OpKind string
@@ -38,11 +39,17 @@ type Op struct {
 	Lines     []store.PasteLine
 }
 
+type SnapshotRead struct {
+	Tenant int
+	Offset float64
+}
+
 type Window struct {
 	Index      int
 	Burst      bool
 	Pastes     []Op
 	Background []Op
+	Snapshots  []SnapshotRead
 }
 
 var siteGroups = []string{"wormhole", "gas", "combat", "relic", "data", "ore", "unknown"}
@@ -120,6 +127,7 @@ func drawPasteSize(rng *rand.Rand, p config.Profile) int {
 
 func BuildPlan(p config.Profile, windows int) []Window {
 	rng := newRand(p.Seed)
+	snapRng := newRand(p.Seed ^ snapshotSeedMix)
 	plan := make([]Window, windows)
 	burstCount := BurstTenantCount(p)
 	for i := range plan {
@@ -151,7 +159,21 @@ func BuildPlan(p config.Profile, windows int) []Window {
 			}
 			w.Background = append(w.Background, op)
 		}
+		w.Snapshots = snapshotReads(snapRng, p)
 		plan[i] = w
 	}
 	return plan
+}
+
+func snapshotReads(rng *rand.Rand, p config.Profile) []SnapshotRead {
+	expected := p.SnapshotsPerSecond * float64(p.WindowMillis) / 1000
+	n := int(expected)
+	if rng.Float64() < expected-float64(n) {
+		n++
+	}
+	reads := make([]SnapshotRead, n)
+	for i := range reads {
+		reads[i] = SnapshotRead{Tenant: rng.IntN(p.Tenants) + 1, Offset: rng.Float64()}
+	}
+	return reads
 }
