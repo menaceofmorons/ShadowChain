@@ -52,6 +52,8 @@ metadata:
 - Custom layout `Endpoint` implementations must provide `onMessageError`; engine worker entries use `bindEngineToWorker` and import only `map/layout` and `map/model` (WS-1.2)
 - elkjs: import `elkjs/lib/elk.bundled.js` (default) and types from `elkjs/lib/elk-api`; `web/node_modules` is denied to file tools (WS-1.2)
 - elk `radial` overlaps nodes; follow with a `sporeOverlap` pass. mrtree/radial have no interactive mode, so elk incremental is a full re-layout (WS-1.2)
+- `elk.bundled.js` fails inside a real Web Worker without a `document` global (`_Worker is not a constructor`); Vitest jsdom hides this (WS-1.2)
+- Playwright specs can import `src/` TypeScript and call Vite `build` (`write: false`), but not `?raw` imports; the `bakeoff` project runs after the others (WS-1.2)
 - Layout `x`,`y` are node top-left in both engines (WS-1.2)
 - Agent shells reject multi-expression `sed -i`; line-pattern `sed` deletes can cut multi-line statements, so use Edit (WS-1.2)
 - e2e host selects an engine via the Worker `name` option (`self.name`); register new engines in `web/e2e/host/engines.ts` (WS-1.2)
