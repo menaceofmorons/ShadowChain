@@ -12,6 +12,8 @@ import { runHarness } from '../../src/map/harness/metricsHarness';
 import type { HarnessReport } from '../../src/map/harness/metricsHarness';
 import { generateChain, generateChurnScript, SYNTHETIC_ROOT_SYSTEM_ID } from '../../src/map/synthetic';
 import { isEngineName } from './engines';
+import { isCandidateName } from './candidates';
+import type { CandidateName } from './candidates';
 
 export interface HostResult {
   readonly report: HarnessReport;
@@ -47,18 +49,39 @@ const modeParam = (params: URLSearchParams): LayoutMode => {
   return mode;
 };
 
-async function run(): Promise<HostResult> {
-  const params = new URLSearchParams(window.location.search);
-  const engineName = params.get('engine') ?? 'stable';
+const createCandidateWorker = (name: CandidateName): Worker => {
+  switch (name) {
+    case 'tidy-tree':
+      return new Worker(new URL('../../src/map/layout/engines/tidyTree/tidyTreeWorker.ts', import.meta.url), {
+        type: 'module',
+      });
+    case 'elkjs':
+      return new Worker(new URL('./elkHostWorker.ts', import.meta.url), {
+        type: 'module',
+      });
+  }
+};
+
+const createWorker = (engineName: string): Worker => {
+  if (isCandidateName(engineName)) {
+    return createCandidateWorker(engineName);
+  }
   if (!isEngineName(engineName)) {
     throw new Error(`unknown engine: ${engineName}`);
   }
+  return new Worker(new URL('./engineWorker.ts', import.meta.url), { type: 'module', name: engineName });
+};
+
+async function run(): Promise<HostResult> {
+  const params = new URLSearchParams(window.location.search);
+  const engineName = params.get('engine') ?? 'stable';
   const size = numberParam(params, 'size', 50);
   const seed = numberParam(params, 'seed', 1);
   const churnCount = numberParam(params, 'churn', 10);
   const fullRepeats = numberParam(params, 'repeats', 3);
 
-  const worker = new Worker(new URL('./engineWorker.ts', import.meta.url), { type: 'module', name: engineName });
+  const warmupRepeats = numberParam(params, 'warmup', 0);
+  const worker = createWorker(engineName);
   const adapter = createLayoutAdapter(endpointFromWorker<LayoutRequestMessage, LayoutResponseMessage>(worker));
 
   let finalPlaced: readonly PlacedNode[] = [];
@@ -70,14 +93,28 @@ async function run(): Promise<HostResult> {
   };
 
   const graph = generateChain({ nodeCount: size, seed });
+  const mode = modeParam(params);
+  const churn = generateChurnScript(graph, { seed: seed + 1, operationCount: churnCount });
+  if (warmupRepeats > 0) {
+    await runHarness({
+      label: engineName,
+      engine,
+      graph,
+      rootSystemId: SYNTHETIC_ROOT_SYSTEM_ID,
+      churn: churn.slice(0, Math.min(churn.length, 4)),
+      engineSources: [],
+      mode,
+      fullRepeats: warmupRepeats,
+    });
+  }
   const report = await runHarness({
     label: engineName,
     engine,
     graph,
     rootSystemId: SYNTHETIC_ROOT_SYSTEM_ID,
-    churn: generateChurnScript(graph, { seed: seed + 1, operationCount: churnCount }),
+    churn,
     engineSources: [],
-    mode: modeParam(params),
+    mode,
     fullRepeats,
   });
   worker.terminate();

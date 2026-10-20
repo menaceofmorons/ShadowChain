@@ -8,7 +8,15 @@ export default defineConfig({
   fullyParallel: true,
   reporter: 'list',
   use: { baseURL: `http://127.0.0.1:${String(PORT)}` },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', testIgnore: 'bakeoff.spec.ts', use: { ...devices['Desktop Chrome'] } },
+    {
+      name: 'bakeoff',
+      testMatch: 'bakeoff.spec.ts',
+      dependencies: ['chromium'],
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
   webServer: {
     command: `npm run dev -- --host 127.0.0.1 --port ${String(PORT)} --strictPort`,
     url: `http://127.0.0.1:${String(PORT)}`,
