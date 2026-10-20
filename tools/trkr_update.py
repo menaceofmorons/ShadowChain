@@ -7,6 +7,7 @@ Usage (paths may be relative or absolute; use / separators):
 
 - Column headers are matched case-insensitively; override with --id-col/--status-col/--completed-col/--notes-col.
 - Without --sheet every tab is searched (IDs are unique project-wide).
+- --create appends a row when the ID is not found (new packages from a plan change); it requires --sheet, and --title sets the new row's Title.
 - A lock file (<tracker>.lock) serialises parallel Team Leads; stale locks (>120 s) are cleared.
 - A .bak copy is written before every save (openpyxl drops charts/images; none are expected).
 Exit codes: 0 ok | 2 row/column/sheet not found | 3 file locked (Excel or another lead) | 4 other error.
@@ -63,6 +64,7 @@ def run(a):
         print(f"NOTFOUND sheet '{a.sheet}'"); sys.exit(2)
     sheets = [wb[a.sheet]] if a.sheet else wb.worksheets
     target = None
+    created = False
     for ws in sheets:
         hr, heads = find_header(ws, a.id_col)
         if hr is None:
@@ -75,6 +77,7 @@ def run(a):
         if target is None and a.create:
             r = ws.max_row + 1
             ws.cell(r, idc, a.id)
+            created = True
             target = (ws, r, heads)
         if target:
             break
@@ -86,6 +89,11 @@ def run(a):
     if sc is None:
         print(f"NOTFOUND column '{a.status_col}' on sheet '{ws.title}'"); sys.exit(2)
     ws.cell(r, sc, a.status)
+    if created and a.title:
+        tc = heads.get(a.title_col.lower())
+        if tc is None:
+            print(f"NOTFOUND column '{a.title_col}' on sheet '{ws.title}'"); sys.exit(2)
+        ws.cell(r, tc, a.title)
     cc = heads.get(a.completed_col.lower())
     if cc and a.status.lower() == "complete":
         ws.cell(r, cc, datetime.now().replace(microsecond=0))
@@ -120,10 +128,14 @@ def main():
     p.add_argument("--status-col", default="Status")
     p.add_argument("--completed-col", default="Completed")
     p.add_argument("--notes-col", default="Notes")
+    p.add_argument("--title", default="", help="Title for a row created with --create")
+    p.add_argument("--title-col", default="Title")
     p.add_argument("--create", action="store_true", help="Append a row if the ID is not found")
     p.add_argument("--no-backup", action="store_true")
     p.add_argument("--dry-run", action="store_true")
     a = p.parse_args()
+    if a.create and not a.sheet:
+        print("ERROR --create requires --sheet"); sys.exit(4)
     lock = None if a.dry_run else acquire_lock(a.tracker)
     try:
         run(a)

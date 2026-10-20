@@ -22,6 +22,7 @@ One check per row. A row has one `Requires` path, so a command spanning two part
 | `--status-col` | `Status` |
 | `--completed-col` | `Completed` |
 | `--notes-col` | `Notes` |
+| `--title-col` | `Title` |
 
 The tab is always `--sheet #WS_ID`.
 

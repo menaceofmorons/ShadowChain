@@ -1,6 +1,6 @@
 ---
 name: project-rules
-description: Project-wide rules for every session and agent - excluded directories, document versions, path format, working rules (design authority, path discipline, scope, locks, worktree removal, Markdown, Execution Config rows), protocol triggers, code comments. Preloaded into all agents; imported by CLAUDE.md; read first by CoWork.
+description: Project-wide rules for every session and agent - excluded directories, document versions, path format, working rules (design authority, path discipline, scope, locks, worktree removal, Markdown, Execution Config rows, process feedback), protocol triggers, code comments. Preloaded into all agents; imported by CLAUDE.md; read first by CoWork.
 user-invocable: false
 metadata:
   source: project-rules template v5.0
@@ -40,6 +40,7 @@ Target build output and generated folders, never source folders. The file-tool p
 - **Worktrees:** remove a worktree only with `py tools/worktree_clean.py remove [--force] {path}` (Team Lead and Developer only), and clear leftovers with `py tools/worktree_clean.py sweep`. Never use bare `git worktree remove`: OneDrive marks folders read-only, which Windows won't delete, and the tool clears that first. If it still fails, report its output.
 - **Execution Config rows:** a row in `.claude/execution-config.md` whose `Requires` file does not exist in your working directory does not apply. Skip it and report it as `N/A ({path} absent)`, never as a pass or a fail. Never create a `Requires` file unless your scope delivers it.
 - **Markdown:** write each paragraph as one unwrapped line.
+- **Process feedback:** a gap in the framework (a protocol, template, rule, hook or tool) is logged in `#FBK` only after the Developer has discussed it with you: state what happened and the proposed change, and write the entry once they agree. The Developer may also ask for any entry, noticed or not. The first entry creates the file from `#TPL/Process-Feedback-Template-vX.X.md`. Only append entries; never edit an existing one (the process Architect changes statuses), and never edit framework files. Package agents never write `#FBK`: they note a gap in their handover's Spillover as `Process: …` for the lead to raise.
 
 ### Protocols (main sessions only)
 - `#T-{Name}` is Developer direction to run `#PROT/T-{Name}-vX.X.md` (top level only, case-insensitive). Read it once per session, plus only the files it names.

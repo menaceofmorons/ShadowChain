@@ -27,6 +27,10 @@ Cards cover only verification that automation cannot do:
 - **Environment and hardware:** OS security prompts, network configuration, live certificates.
 - **Exploratory and packaging:** exploratory usage, multi-device sync, binary packaging.
 
+Two limits on what a card may ask:
+- **It depends only on what exists now.** If a scenario needs hardware, an account or a service that does not exist, don't card it; note it in the handover Spillover as deferred verification.
+- **It never asks for a design-decision sign-off.** A card verifies behaviour. If the package needs the decision to proceed, return `BLOCKED`; otherwise record the decision and its evidence in the handover Spillover as an open question.
+
 **File and naming:** one file per package, holding all of its tests, at the brief's Card path: `Developer-Tests-{WS}.{K}.{x}.md`. `x` starts at `0`.
 
 **Versioning (Changes Requested):** when a fix brief cites a card marked Changes Requested, write version `x+1` as a **complete replacement**:
@@ -36,7 +40,8 @@ Cards cover only verification that automation cannot do:
 The highest version is always self-contained. When you write version `x+1`, **move version `x` to the `Archive/` folder beside it**, so only the current card stays open.
 
 **Rules for every test:**
-- If you can't state **Why a human**, automate the test instead of carding it.
+- If you can't state **Why a human**, automate the test instead of carding it. A scenario an automated test already covers is not carded.
+- Keep it terse: one or two lines per field, steps as a short numbered list, no background beyond Why a human.
 - Give exact commands and steps, the expected output, and a plain-text explanation of what to do. Tests must be repeatable, observable, objective and executable; nothing left to guessing.
 - **State-modifying tests** (env vars, DB contents, config files, app settings) must record the original state, execute, then restore it, with the rollback steps written out explicitly.
 - Put every parameter, code snippet, script, command, and directory path to be copied or run in a fenced block.

@@ -31,6 +31,7 @@ WRITE_OK = (
     r"/Execution-Ledger-[^/]+\.md$",
     r"/Package-Implementation-Plan-[^/]+(?<!-Baseline)\.md$",
     r"/Plan-Changes-[^/]+\.md$",
+    r"/Process-Feedback-[^/]+\.md$",
     r"/\.claude/skills/codebase-lessons/SKILL\.md$",
     r"/\.claude/tlo-active$",
 )
@@ -42,7 +43,7 @@ if tool in ("Agent", "Task"):
 elif tool in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
     p = norm(ti.get("file_path") or ti.get("notebook_path"))
     if not any(re.search(rx, p) for rx in WRITE_OK):
-        block(f"the lead writes only the ledger, the active plan, its change log and codebase-lessons; delegate changes to '{p}'.")
+        block(f"the lead writes only the ledger, the active plan, its change log, process feedback and codebase-lessons; delegate changes to '{p}'.")
 elif tool in ("Read", "Grep", "Glob"):
     joined = " ".join(norm(str(ti.get(k) or "")) for k in ("file_path", "path", "pattern", "glob"))
     if "Design_Spec_Dense" in joined:

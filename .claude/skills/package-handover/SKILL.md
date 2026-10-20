@@ -36,7 +36,8 @@ Keep it under ~70 lines. It is read by the Team Lead, downstream packages, the i
 - {Any corrected Expected Result, WSPP/design conflict reported, PROVISIONAL defaults chosen | None}
 
 ## Spillover
-- {Edge cases, tech debt, deferred scope discovered | None}
+- {Edge cases, tech debt, deferred scope, open questions, deferred verification discovered | None}
+- Process: {a gap you hit in the framework (protocol, template, rule or tool); the lead raises it with the Developer | omit}
 
 ## Lessons
 - {Reusable, codebase-level finding a future package would otherwise rediscover (build quirk, convention, gotcha, tool behaviour). Not package-specific detail. | None}
