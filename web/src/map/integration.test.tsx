@@ -29,7 +29,6 @@ import {
   type LayoutEngine,
   type LayoutRequestMessage,
   type LayoutResponseMessage,
-  type PlacedNode,
 } from './index';
 
 const SEED = 11;
@@ -38,7 +37,7 @@ function viaWorkerBoundary(engine: LayoutEngine): LayoutEngine {
   const { a, b } = createMemoryChannel<LayoutRequestMessage, LayoutResponseMessage>();
   createWorkerHost(engine, b);
   const adapter = createLayoutAdapter(a);
-  return { layout: (request) => adapter.layout(request) as Promise<PlacedNode[]> };
+  return { layout: (request) => adapter.layout(request) };
 }
 
 function describeGraph(graph: ChainGraph): { loops: boolean; parallel: boolean; unknownEnds: number } {
@@ -68,7 +67,9 @@ function describeFixture(fixture: typeof wanderer553 | typeof wanderer98): Recor
     reconstructed: fixture.reconstruction.reconstructed,
     note: fixture.reconstruction.note,
     startPositions: fixture.startPositions,
-    ...('step' in fixture ? { step: fixture.step, newNodeKey: fixture.newNodeKey } : { movedNodeKeys: fixture.movedNodeKeys, dragDelta: fixture.dragDelta }),
+    ...('step' in fixture
+      ? { step: fixture.step, newNodeKey: fixture.newNodeKey }
+      : { movedNodeKeys: fixture.movedNodeKeys, dragDelta: fixture.dragDelta }),
     expected: fixture.expected,
   };
 }
@@ -106,25 +107,28 @@ describe('toolchain pin', () => {
 });
 
 describe('generators through the public entry', () => {
-  it.each(SYNTHETIC_NODE_COUNTS)('%i nodes carry loops, parallel edges, unknown ends and valid node keys', (nodeCount) => {
-    const graph = generateChain({ nodeCount, seed: SEED });
-    expect(graph.systems).toHaveLength(nodeCount);
-    const traits = describeGraph(graph);
-    expect(traits.parallel).toBe(true);
-    expect(traits.unknownEnds).toBeGreaterThan(0);
-    expect(traits.loops).toBe(true);
+  it.each(SYNTHETIC_NODE_COUNTS)(
+    '%i nodes carry loops, parallel edges, unknown ends and valid node keys',
+    (nodeCount) => {
+      const graph = generateChain({ nodeCount, seed: SEED });
+      expect(graph.systems).toHaveLength(nodeCount);
+      const traits = describeGraph(graph);
+      expect(traits.parallel).toBe(true);
+      expect(traits.unknownEnds).toBeGreaterThan(0);
+      expect(traits.loops).toBe(true);
 
-    const tree = buildChainTree(graph, SYNTHETIC_ROOT_SYSTEM_ID);
-    const kinds = new Set(tree.nodes.map((node) => node.kind));
-    expect(kinds).toEqual(new Set(['primary', 'alias', 'unknownEnd']));
-    const primaries = tree.nodes.filter((node) => node.kind === 'primary');
-    expect(primaries).toHaveLength(nodeCount);
-    expect(new Set(tree.nodes.map((node) => node.keyString)).size).toBe(tree.nodes.length);
-    for (const node of tree.nodes) {
-      expect(node.keyString).toMatch(/^(s:\d+|a:\d+:\d+|u:\d+)$/);
-      expect(parseNodeKey(node.keyString)).toEqual(node.key);
-    }
-  });
+      const tree = buildChainTree(graph, SYNTHETIC_ROOT_SYSTEM_ID);
+      const kinds = new Set(tree.nodes.map((node) => node.kind));
+      expect(kinds).toEqual(new Set(['primary', 'alias', 'unknownEnd']));
+      const primaries = tree.nodes.filter((node) => node.kind === 'primary');
+      expect(primaries).toHaveLength(nodeCount);
+      expect(new Set(tree.nodes.map((node) => node.keyString)).size).toBe(tree.nodes.length);
+      for (const node of tree.nodes) {
+        expect(node.keyString).toMatch(/^(s:\d+|a:\d+:\d+|u:\d+)$/);
+        expect(parseNodeKey(node.keyString)).toEqual(node.key);
+      }
+    },
+  );
 
   it('generates all four sizes deterministically per seed', () => {
     expect(JSON.stringify(generateAllSizes(SEED))).toBe(JSON.stringify(generateAllSizes(SEED)));
@@ -154,7 +158,13 @@ describe('harness end to end over the worker boundary', () => {
     console.info(`
 ${text}
 `);
-    for (const label of ['nodes moved per addition', 'full layout time', 'incremental layout time', 'bytes', 'non-blank lines']) {
+    for (const label of [
+      'nodes moved per addition',
+      'full layout time',
+      'incremental layout time',
+      'bytes',
+      'non-blank lines',
+    ]) {
       expect(text).toContain(label);
     }
   });

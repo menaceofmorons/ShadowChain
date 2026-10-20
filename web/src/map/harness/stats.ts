@@ -17,6 +17,8 @@ export const summarise = (samples: readonly number[]): TimingStats => {
   const sorted = [...samples].sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
   const median =
-    sorted.length % 2 === 1 ? (sorted[middle] as number) : ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2;
+    sorted.length % 2 === 1
+      ? (sorted[middle] as number)
+      : ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2;
   return { count: sorted.length, median, p95: nearestRank(sorted, 0.95), max: sorted[sorted.length - 1] as number };
 };

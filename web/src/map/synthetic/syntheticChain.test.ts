@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { buildChainTree } from '../model/chainTree';
-import { applyChurn, generateChain, generateChurnScript, SYNTHETIC_NODE_COUNTS, SYNTHETIC_ROOT_SYSTEM_ID } from './index';
+import {
+  applyChurn,
+  generateChain,
+  generateChurnScript,
+  SYNTHETIC_NODE_COUNTS,
+  SYNTHETIC_ROOT_SYSTEM_ID,
+} from './index';
 
 describe.each(SYNTHETIC_NODE_COUNTS)('generateChain(%i)', (nodeCount) => {
   const graph = generateChain({ nodeCount, seed: 7 });
@@ -39,7 +45,9 @@ describe.each(SYNTHETIC_NODE_COUNTS)('generateChain(%i)', (nodeCount) => {
   it('replays churn keeping endpoints valid with adds and removes', () => {
     const script = generateChurnScript(graph, { seed: 3, operationCount: 200 });
     expect(JSON.stringify(generateChurnScript(graph, { seed: 3, operationCount: 200 }))).toBe(JSON.stringify(script));
-    expect(JSON.stringify(generateChurnScript(graph, { seed: 4, operationCount: 200 }))).not.toBe(JSON.stringify(script));
+    expect(JSON.stringify(generateChurnScript(graph, { seed: 4, operationCount: 200 }))).not.toBe(
+      JSON.stringify(script),
+    );
     expect(script.some((o) => o.kind === 'add')).toBe(true);
     expect(script.some((o) => o.kind === 'remove')).toBe(true);
     const result = applyChurn(graph, script);

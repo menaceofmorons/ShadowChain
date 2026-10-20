@@ -63,9 +63,7 @@ describe('wanderer #553', () => {
 describe('wanderer #98', () => {
   const { startPositions, movedNodeKeys, dragDelta, staleUpdate } = wanderer98;
   const dragged = startPositions.map((node) =>
-    movedNodeKeys.includes(node.nodeKey)
-      ? at(node.nodeKey, node.x + dragDelta.dx, node.y + dragDelta.dy)
-      : node,
+    movedNodeKeys.includes(node.nodeKey) ? at(node.nodeKey, node.x + dragDelta.dx, node.y + dragDelta.dy) : node,
   );
   const expectedMoved = dragged.filter((node) => movedNodeKeys.includes(node.nodeKey));
   const correctBatch: PositionBatch = { positions: expectedMoved };
@@ -73,10 +71,7 @@ describe('wanderer #98', () => {
 
   const naiveMerge = applyBatch;
   const guardedMerge = (state: readonly NodePosition[], update: PositionBatch) =>
-    applyBatch(
-      state,
-      { positions: update.positions.filter((node) => !movedNodeKeys.includes(node.nodeKey)) },
-    );
+    applyBatch(state, { positions: update.positions.filter((node) => !movedNodeKeys.includes(node.nodeKey)) });
 
   it('accepts a batch carrying every moved node', () => {
     expect(batchCarriesAllMoved(correctBatch, movedNodeKeys, expectedMoved)).toBe(true);

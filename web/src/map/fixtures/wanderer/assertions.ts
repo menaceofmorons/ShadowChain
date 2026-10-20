@@ -5,7 +5,6 @@ export interface NominalNodeSize {
   readonly height: number;
 }
 
-// TUNE: nominal node footprint used only by fixture overlap checks.
 export const DEFAULT_NOMINAL_NODE_SIZE: NominalNodeSize = { width: 160, height: 48 };
 
 export function nodesOverlap(
@@ -28,10 +27,7 @@ export function newNodeOverlapsAny(
   return outcome.some((node) => node.nodeKey !== newNodeKey && nodesOverlap(added, node, size));
 }
 
-export function movedPlacedNodes(
-  before: readonly NodePosition[],
-  after: readonly NodePosition[],
-): string[] {
+export function movedPlacedNodes(before: readonly NodePosition[], after: readonly NodePosition[]): string[] {
   const afterByKey = new Map(after.map((node) => [node.nodeKey, node]));
   return before
     .filter((node) => {
@@ -41,10 +37,7 @@ export function movedPlacedNodes(
     .map((node) => node.nodeKey);
 }
 
-export function placedNodesUnmoved(
-  before: readonly NodePosition[],
-  after: readonly NodePosition[],
-): boolean {
+export function placedNodesUnmoved(before: readonly NodePosition[], after: readonly NodePosition[]): boolean {
   return movedPlacedNodes(before, after).length === 0;
 }
 
@@ -70,10 +63,7 @@ export function batchCarriesAllMoved(
   });
 }
 
-export function applyBatch(
-  state: readonly NodePosition[],
-  batch: PositionBatch,
-): NodePosition[] {
+export function applyBatch(state: readonly NodePosition[], batch: PositionBatch): NodePosition[] {
   const byKey = new Map(state.map((node) => [node.nodeKey, node]));
   for (const node of batch.positions) {
     byKey.set(node.nodeKey, node);

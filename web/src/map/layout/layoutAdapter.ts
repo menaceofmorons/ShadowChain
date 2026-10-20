@@ -11,9 +11,7 @@ interface Pending {
   readonly reject: (error: LayoutError) => void;
 }
 
-export function createLayoutAdapter(
-  endpoint: Endpoint<LayoutRequestMessage, LayoutResponseMessage>,
-): LayoutAdapter {
+export function createLayoutAdapter(endpoint: Endpoint<LayoutRequestMessage, LayoutResponseMessage>): LayoutAdapter {
   const pending = new Map<number, Pending>();
   let nextId = 1;
 
