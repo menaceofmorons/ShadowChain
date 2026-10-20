@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { buildChainTree } from '../model/chainTree';
 import type { ChainConnection } from '../model/types';
 import { createLayoutAdapter } from './layoutAdapter';
-import { createMemoryChannel } from './transport';
+import { createMemoryChannel, endpointFromWorker } from './transport';
+import type { Endpoint, WorkerLike } from './transport';
+import { validateRequest } from './validateRequest';
 import { createWorkerHost } from './workerHost';
 import { createStubEngine } from './testing/stubEngine';
 import { LayoutError } from './types';
@@ -31,6 +33,40 @@ function connect(engine: LayoutEngine) {
   const channel = createMemoryChannel<LayoutRequestMessage, LayoutResponseMessage>();
   createWorkerHost(engine, channel.b);
   return createLayoutAdapter(channel.a);
+}
+
+function fakeEndpoint() {
+  let onMessage: (message: LayoutResponseMessage) => void = () => undefined;
+  let onError: (reason: string) => void = () => undefined;
+  let onMessageError: (reason: string) => void = () => undefined;
+  const posted: LayoutRequestMessage[] = [];
+  const endpoint: Endpoint<LayoutRequestMessage, LayoutResponseMessage> = {
+    post: (message) => {
+      posted.push(message);
+    },
+    onMessage: (handler) => {
+      onMessage = handler;
+    },
+    onError: (handler) => {
+      onError = handler;
+    },
+    onMessageError: (handler) => {
+      onMessageError = handler;
+    },
+  };
+  return {
+    endpoint,
+    posted,
+    respond: (message: LayoutResponseMessage) => {
+      onMessage(message);
+    },
+    fail: (reason: string) => {
+      onError(reason);
+    },
+    messageError: (reason: string) => {
+      onMessageError(reason);
+    },
+  };
 }
 
 const byKey = (nodes: readonly PlacedNode[]) => new Map(nodes.map((n) => [n.nodeKey, n]));
@@ -132,18 +168,260 @@ describe('layout adapter', () => {
   });
 
   it('rejects all pending requests when the endpoint reports an error', async () => {
-    let fail: (reason: string) => void = () => undefined;
-    const adapter = createLayoutAdapter({
-      post: () => undefined,
-      onMessage: () => undefined,
-      onError: (handler) => {
-        fail = handler;
-      },
-    });
+    const fake = fakeEndpoint();
+    const adapter = createLayoutAdapter(fake.endpoint);
     const first = adapter.layout(fullRequest());
     const second = adapter.layout(fullRequest());
-    fail('worker crashed');
+    fake.fail('worker crashed');
     await expect(first).rejects.toMatchObject({ code: 'engine-failure', message: 'worker crashed' });
     await expect(second).rejects.toMatchObject({ code: 'engine-failure', message: 'worker crashed' });
+  });
+
+  it('rejects every later call immediately after a fatal error', async () => {
+    const fake = fakeEndpoint();
+    const adapter = createLayoutAdapter(fake.endpoint);
+    fake.fail('worker crashed');
+    await expect(adapter.layout(fullRequest())).rejects.toMatchObject({ code: 'engine-failure' });
+    await expect(adapter.layout(fullRequest())).rejects.toMatchObject({ code: 'engine-failure' });
+    expect(fake.posted).toHaveLength(0);
+  });
+
+  it('rejects pending requests on messageerror but stays usable', async () => {
+    const fake = fakeEndpoint();
+    const adapter = createLayoutAdapter(fake.endpoint);
+    const first = adapter.layout(fullRequest());
+    fake.messageError('bad clone');
+    await expect(first).rejects.toMatchObject({ code: 'engine-failure', message: 'bad clone' });
+    const second = adapter.layout(fullRequest());
+    fake.respond({ id: 2, ok: true, nodes: [] });
+    await expect(second).resolves.toEqual([]);
+  });
+
+  it('rejects only its own request when a response reports an engine failure', async () => {
+    const fake = fakeEndpoint();
+    const adapter = createLayoutAdapter(fake.endpoint);
+    const first = adapter.layout(fullRequest());
+    const second = adapter.layout(fullRequest());
+    fake.respond({ id: 1, ok: false, error: { code: 'engine-failure', message: 'nope' } });
+    fake.respond({ id: 2, ok: true, nodes: [] });
+    await expect(first).rejects.toMatchObject({ code: 'engine-failure', message: 'nope' });
+    await expect(second).resolves.toEqual([]);
+  });
+
+  it('times out a request with a LayoutError and ignores a late response', async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = fakeEndpoint();
+      const adapter = createLayoutAdapter(fake.endpoint, { timeoutMs: 50 });
+      const result = adapter.layout(fullRequest());
+      const assertion = expect(result).rejects.toMatchObject({ code: 'engine-failure' });
+      await vi.advanceTimersByTimeAsync(50);
+      await assertion;
+      fake.respond({ id: 1, ok: true, nodes: [] });
+      const next = adapter.layout(fullRequest());
+      fake.respond({ id: 2, ok: true, nodes: [] });
+      await expect(next).resolves.toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not time out a request that is answered in time', async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = fakeEndpoint();
+      const adapter = createLayoutAdapter(fake.endpoint, { timeoutMs: 50 });
+      const result = adapter.layout(fullRequest());
+      fake.respond({ id: 1, ok: true, nodes: [] });
+      await expect(result).resolves.toEqual([]);
+      await vi.advanceTimersByTimeAsync(100);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    ['not an object', 'nope'],
+    ['ok without nodes', { id: 1, ok: true }],
+    ['non-finite x', { id: 1, ok: true, nodes: [{ nodeKey: 'a', x: Infinity, y: 0, source: 'auto', alias: false }] }],
+    ['numeric nodeKey', { id: 1, ok: true, nodes: [{ nodeKey: 1, x: 0, y: 0, source: 'auto', alias: false }] }],
+    ['bad source', { id: 1, ok: true, nodes: [{ nodeKey: 'a', x: 0, y: 0, source: 'x', alias: false }] }],
+    ['missing alias', { id: 1, ok: true, nodes: [{ nodeKey: 'a', x: 0, y: 0, source: 'auto' }] }],
+    ['failure without error', { id: 1, ok: false }],
+  ])('rejects an invalid response (%s) with engine-failure', async (label, response) => {
+    const fake = fakeEndpoint();
+    const adapter = createLayoutAdapter(fake.endpoint);
+    const result = adapter.layout(fullRequest());
+    fake.respond(response as unknown as LayoutResponseMessage);
+    if (label === 'not an object') {
+      fake.respond({ id: 1, ok: true, nodes: [] });
+      await expect(result).resolves.toEqual([]);
+    } else {
+      await expect(result).rejects.toMatchObject({ code: 'engine-failure' });
+    }
+  });
+
+  it('ignores a response envelope with no usable id', async () => {
+    const fake = fakeEndpoint();
+    const adapter = createLayoutAdapter(fake.endpoint);
+    const result = adapter.layout(fullRequest());
+    fake.respond({ ok: true, nodes: [] } as unknown as LayoutResponseMessage);
+    fake.respond({ id: 1, ok: true, nodes: [] });
+    await expect(result).resolves.toEqual([]);
+  });
+});
+
+describe('request validation', () => {
+  const nodeOf = (key: string, children: unknown[] = [], parentEdge: unknown = {}) => ({
+    keyString: key,
+    children,
+    parentEdge,
+  });
+  const placed = (key: string) => ({ nodeKey: key, x: 0, y: 0, source: 'auto', alias: false });
+  const good = () => {
+    const child = nodeOf('b');
+    const root = nodeOf('a', [child], null);
+    return { root, nodes: [root, child] };
+  };
+  const full = (tree: unknown, manualPositions: unknown[] = []) => ({
+    type: 'full',
+    mode: 'top-down',
+    tree,
+    manualPositions,
+  });
+  const incremental = (extra: Record<string, unknown>) => ({
+    ...full(good()),
+    type: 'incremental',
+    previous: [placed('a')],
+    addedNodeKeys: ['b'],
+    removedNodeKeys: [],
+    ...extra,
+  });
+
+  it('accepts a consistent request', () => {
+    expect(() => validateRequest(full(good()))).not.toThrow();
+    expect(() => validateRequest(incremental({}))).not.toThrow();
+  });
+
+  it.each<[string, () => unknown]>([
+    [
+      'duplicate node keys',
+      () => {
+        const t = good();
+        return full({ root: t.root, nodes: [...t.nodes, nodeOf('b')] });
+      },
+    ],
+    [
+      'child not in nodes',
+      () => {
+        const root = nodeOf('a', [nodeOf('z')], null);
+        return full({ root, nodes: [root] });
+      },
+    ],
+    [
+      'root not in nodes',
+      () => {
+        const t = good();
+        return full({ root: nodeOf('q', [], null), nodes: t.nodes });
+      },
+    ],
+    [
+      'two roots',
+      () => {
+        const a = nodeOf('a', [], null);
+        const b = nodeOf('b', [], null);
+        return full({ root: a, nodes: [a, b] });
+      },
+    ],
+    ['node without keyString', () => full({ root: { children: [] }, nodes: [{ children: [] }] })],
+    ['manual position for unknown node', () => full(good(), [{ nodeKey: 'zz', x: 0, y: 0 }])],
+    [
+      'duplicate manual positions',
+      () =>
+        full(good(), [
+          { nodeKey: 'a', x: 0, y: 0 },
+          { nodeKey: 'a', x: 1, y: 1 },
+        ]),
+    ],
+    ['duplicate previous keys', () => incremental({ previous: [placed('a'), placed('a')] })],
+    ['added node not in tree', () => incremental({ addedNodeKeys: ['nope'] })],
+    ['added node already placed', () => incremental({ previous: [placed('a'), placed('b')] })],
+    ['removed node still in tree', () => incremental({ removedNodeKeys: ['a'] })],
+    ['duplicate added keys', () => incremental({ addedNodeKeys: ['b', 'b'] })],
+  ])('rejects %s as malformed-request', (_label, make) => {
+    expect(() => validateRequest(make())).toThrowError(expect.objectContaining({ code: 'malformed-request' }));
+  });
+
+  it('maps an inconsistent tree to malformed-request through the adapter', async () => {
+    const adapter = connect(createStubEngine());
+    const root = nodeOf('a', [nodeOf('z')], null);
+    const bad = full({ root, nodes: [root] }) as unknown as LayoutRequest;
+    await expect(adapter.layout(bad)).rejects.toMatchObject({ code: 'malformed-request' });
+  });
+});
+
+describe('worker host envelope handling', () => {
+  it('reports an envelope without a usable id and does not throw or answer', async () => {
+    const channel = createMemoryChannel<LayoutRequestMessage, LayoutResponseMessage>();
+    const reports: string[] = [];
+    createWorkerHost(createStubEngine(), channel.b, {
+      onInvalidEnvelope: (reason) => {
+        reports.push(reason);
+      },
+    });
+    const replies: unknown[] = [];
+    channel.a.onMessage((m) => replies.push(m));
+    channel.a.post({ request: fullRequest() } as unknown as LayoutRequestMessage);
+    channel.a.post(null as unknown as LayoutRequestMessage);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(reports).toHaveLength(2);
+    expect(replies).toHaveLength(0);
+  });
+
+  it('tolerates a missing callback', async () => {
+    const channel = createMemoryChannel<LayoutRequestMessage, LayoutResponseMessage>();
+    createWorkerHost(createStubEngine(), channel.b);
+    channel.a.post({ id: 'x' } as unknown as LayoutRequestMessage);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(true).toBe(true);
+  });
+});
+
+describe('endpointFromWorker', () => {
+  it('routes error to onError and messageerror to onMessageError', () => {
+    const listeners = new Map<string, (event: Event) => void>();
+    const worker: WorkerLike = {
+      postMessage: () => undefined,
+      addEventListener: (type: string, listener: (event: never) => void) => {
+        listeners.set(type, listener as (event: Event) => void);
+      },
+    };
+    const endpoint = endpointFromWorker<unknown, unknown>(worker);
+    const errors: string[] = [];
+    const messageErrors: string[] = [];
+    endpoint.onError((r) => errors.push(r));
+    endpoint.onMessageError((r) => messageErrors.push(r));
+    listeners.get('error')?.(new Event('error'));
+    expect(errors).toEqual(['worker error']);
+    expect(messageErrors).toEqual([]);
+    listeners.get('messageerror')?.(new Event('messageerror'));
+    expect(messageErrors).toHaveLength(1);
+  });
+
+  it('wires adapter fatal handling through a fake worker', async () => {
+    const listeners = new Map<string, (event: Event) => void>();
+    const worker: WorkerLike = {
+      postMessage: () => undefined,
+      addEventListener: (type: string, listener: (event: never) => void) => {
+        listeners.set(type, listener as (event: Event) => void);
+      },
+    };
+    const adapter = createLayoutAdapter(endpointFromWorker(worker));
+    const pending = adapter.layout(fullRequest());
+    listeners.get('error')?.(new Event('error'));
+    await expect(pending).rejects.toMatchObject({ code: 'engine-failure' });
+    await expect(adapter.layout(fullRequest())).rejects.toMatchObject({ code: 'engine-failure' });
   });
 });

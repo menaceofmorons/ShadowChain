@@ -36,6 +36,66 @@ const requirePlacements = (value: unknown, name: string, withSource: boolean): v
   }
 };
 
+const requireUnique = (keys: readonly string[], name: string): Set<string> => {
+  const set = new Set(keys);
+  if (set.size !== keys.length) {
+    fail(`${name} must not repeat a node key`);
+  }
+  return set;
+};
+
+const requireConsistentTree = (tree: Record<string, unknown>): Set<string> => {
+  const nodes = tree['nodes'] as unknown[];
+  if (
+    nodes.some((node) => !isRecord(node) || typeof node['keyString'] !== 'string' || !Array.isArray(node['children']))
+  ) {
+    fail('tree nodes need a keyString and children');
+  }
+  const typed = nodes as { keyString: string; children: { keyString?: unknown }[]; parentEdge?: unknown }[];
+  const keys = requireUnique(
+    typed.map((node) => node.keyString),
+    'tree nodes',
+  );
+  const root = tree['root'] as { keyString?: unknown };
+  if (typeof root['keyString'] !== 'string' || !keys.has(root['keyString'])) {
+    fail('tree root must be one of the tree nodes');
+  }
+  for (const node of typed) {
+    for (const child of node.children) {
+      if (typeof child.keyString !== 'string' || !keys.has(child.keyString)) {
+        fail('tree children must reference existing nodes');
+      }
+    }
+  }
+  const roots = typed.filter((node) => node.parentEdge === null || node.parentEdge === undefined);
+  if (roots.length !== 1 || roots[0]?.keyString !== root['keyString']) {
+    fail('tree must have exactly one root');
+  }
+  return keys;
+};
+
+const requireConsistentIncremental = (value: Record<string, unknown>, treeKeys: Set<string>): void => {
+  const previous = requireUnique(
+    (value['previous'] as { nodeKey: string }[]).map((item) => item.nodeKey),
+    'previous',
+  );
+  const added = requireUnique(value['addedNodeKeys'] as string[], 'addedNodeKeys');
+  const removed = requireUnique(value['removedNodeKeys'] as string[], 'removedNodeKeys');
+  for (const key of added) {
+    if (!treeKeys.has(key)) {
+      fail('addedNodeKeys must exist in the tree');
+    }
+    if (previous.has(key)) {
+      fail('addedNodeKeys must not already be placed');
+    }
+  }
+  for (const key of removed) {
+    if (treeKeys.has(key)) {
+      fail('removedNodeKeys must not exist in the tree');
+    }
+  }
+};
+
 export function validateRequest(value: unknown): LayoutRequest {
   if (!isRecord(value)) {
     return fail('request must be an object');
@@ -55,6 +115,19 @@ export function validateRequest(value: unknown): LayoutRequest {
     requirePlacements(value['previous'], 'previous', true);
     requireStringArray(value['addedNodeKeys'], 'addedNodeKeys');
     requireStringArray(value['removedNodeKeys'], 'removedNodeKeys');
+  }
+  const treeKeys = requireConsistentTree(tree as Record<string, unknown>);
+  const manual = requireUnique(
+    (value['manualPositions'] as { nodeKey: string }[]).map((item) => item.nodeKey),
+    'manualPositions',
+  );
+  for (const key of manual) {
+    if (!treeKeys.has(key)) {
+      fail('manualPositions must reference tree nodes');
+    }
+  }
+  if (value['type'] === 'incremental') {
+    requireConsistentIncremental(value, treeKeys);
   }
   return value as unknown as LayoutRequest;
 }
