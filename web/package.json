@@ -13,11 +13,12 @@
     "lint": "eslint .",
     "test": "vitest run",
     "e2e": "playwright test",
-    "format":"prettier --write src",
+    "format": "prettier --write src",
     "format:check": "prettier --check src"
   },
   "dependencies": {
     "@xyflow/react": "^12.12.0",
+    "elkjs": "^0.12.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
