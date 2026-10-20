@@ -1,4 +1,5 @@
 import { createLayoutAdapter } from '../../src/map/layout/layoutAdapter';
+import type { LayoutAdapter } from '../../src/map/layout/layoutAdapter';
 import { endpointFromWorker } from '../../src/map/layout/transport';
 import type {
   LayoutEngine,
@@ -12,6 +13,7 @@ import { runHarness } from '../../src/map/harness/metricsHarness';
 import type { HarnessReport } from '../../src/map/harness/metricsHarness';
 import { generateChain, generateChurnScript, SYNTHETIC_ROOT_SYSTEM_ID } from '../../src/map/synthetic';
 import { isEngineName } from './engines';
+import { createRegistryAdapter } from '../../src/map/layout/engines/registryAdapter';
 import { isCandidateName } from './candidates';
 import type { CandidateName } from './candidates';
 
@@ -56,7 +58,7 @@ const createCandidateWorker = (name: CandidateName): Worker => {
         type: 'module',
       });
     case 'elkjs':
-      return new Worker(new URL('./elkHostWorker.ts', import.meta.url), {
+      return new Worker(new URL('../../src/map/layout/engines/elk/elkWorker.ts', import.meta.url), {
         type: 'module',
       });
   }
@@ -72,6 +74,17 @@ const createWorker = (engineName: string): Worker => {
   return new Worker(new URL('./engineWorker.ts', import.meta.url), { type: 'module', name: engineName });
 };
 
+const createSingleWorkerAdapter = (engineName: string): { layout: LayoutAdapter['layout']; dispose: () => void } => {
+  const worker = createWorker(engineName);
+  const adapter = createLayoutAdapter(endpointFromWorker<LayoutRequestMessage, LayoutResponseMessage>(worker));
+  return {
+    layout: (request) => adapter.layout(request),
+    dispose: () => {
+      worker.terminate();
+    },
+  };
+};
+
 async function run(): Promise<HostResult> {
   const params = new URLSearchParams(window.location.search);
   const engineName = params.get('engine') ?? 'stable';
@@ -81,8 +94,7 @@ async function run(): Promise<HostResult> {
   const fullRepeats = numberParam(params, 'repeats', 3);
 
   const warmupRepeats = numberParam(params, 'warmup', 0);
-  const worker = createWorker(engineName);
-  const adapter = createLayoutAdapter(endpointFromWorker<LayoutRequestMessage, LayoutResponseMessage>(worker));
+  const adapter = engineName === 'registry' ? createRegistryAdapter() : createSingleWorkerAdapter(engineName);
 
   let finalPlaced: readonly PlacedNode[] = [];
   const engine: LayoutEngine = {
@@ -117,7 +129,7 @@ async function run(): Promise<HostResult> {
     mode,
     fullRepeats,
   });
-  worker.terminate();
+  adapter.dispose();
   return { report, finalPlaced };
 }
 
