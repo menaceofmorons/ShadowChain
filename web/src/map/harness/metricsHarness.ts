@@ -19,6 +19,7 @@ export interface HarnessInput {
   readonly mode?: LayoutMode;
   readonly manualPositions?: readonly ManualPosition[];
   readonly now?: () => number;
+  readonly fullRepeats?: number;
 }
 
 export interface MovedPerAddition extends TimingStats {
@@ -33,6 +34,8 @@ export interface HarnessReport {
   readonly nodesMovedPerAddition: MovedPerAddition;
   readonly fullLayoutMs: TimingStats;
   readonly incrementalLayoutMs: TimingStats;
+  readonly additionLayoutMs: TimingStats;
+  readonly removalLayoutMs: TimingStats;
   readonly codeSize: CodeSize;
 }
 
@@ -44,11 +47,21 @@ export async function runHarness(input: HarnessInput): Promise<HarnessReport> {
 
   let graph = input.graph;
   let tree = buildChainTree(graph, rootSystemId);
-  const fullStart = now();
-  let placed: readonly PlacedNode[] = await engine.layout({ type: 'full', tree, mode, manualPositions });
-  const fullDuration = now() - fullStart;
+  const fullRepeats = input.fullRepeats ?? 1;
+  if (!Number.isInteger(fullRepeats) || fullRepeats < 1) {
+    throw new Error('fullRepeats must be a positive integer');
+  }
+  const fullDurations: number[] = [];
+  let placed: readonly PlacedNode[] = [];
+  for (let repeat = 0; repeat < fullRepeats; repeat += 1) {
+    const fullStart = now();
+    placed = await engine.layout({ type: 'full', tree, mode, manualPositions });
+    fullDurations.push(now() - fullStart);
+  }
 
   const incrementalDurations: number[] = [];
+  const additionDurations: number[] = [];
+  const removalDurations: number[] = [];
   const movedPerAddition: number[] = [];
   let knownKeys: ReadonlySet<string> = new Set(tree.nodes.map((node) => node.keyString));
 
@@ -68,7 +81,9 @@ export async function runHarness(input: HarnessInput): Promise<HarnessReport> {
       addedNodeKeys,
       removedNodeKeys,
     });
-    incrementalDurations.push(now() - start);
+    const duration = now() - start;
+    incrementalDurations.push(duration);
+    (operation.kind === 'add' ? additionDurations : removalDurations).push(duration);
     if (operation.kind === 'add') {
       movedPerAddition.push(countMovedNodes(placed, next));
     }
@@ -82,8 +97,10 @@ export async function runHarness(input: HarnessInput): Promise<HarnessReport> {
     nodeCount: input.graph.systems.length,
     churnSteps: input.churn.length,
     nodesMovedPerAddition: { ...summarise(movedPerAddition), perAddition: movedPerAddition },
-    fullLayoutMs: summarise([fullDuration]),
+    fullLayoutMs: summarise(fullDurations),
     incrementalLayoutMs: summarise(incrementalDurations),
+    additionLayoutMs: summarise(additionDurations),
+    removalLayoutMs: summarise(removalDurations),
     codeSize: measureCodeSize(input.engineSources),
   };
 }

@@ -6,3 +6,10 @@ export type { CodeSize, SourceFile } from './codeSize';
 export { summarise } from './stats';
 export type { TimingStats } from './stats';
 export { countMovedNodes } from './movement';
+export {
+  assertNoMovementOnAddition,
+  assertMovedPerAdditionAtMost,
+  assertWithinTimeBudget,
+  HarnessAssertionError,
+} from './assertions';
+export type { TimingStatistic } from './assertions';
