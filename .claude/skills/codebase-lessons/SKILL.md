@@ -31,7 +31,7 @@ metadata:
 - Agent shells block foreground `sleep`; for a long wait use `ping -n N 127.0.0.1` (WS-1.6)
 
 ### Conventions
-- {lesson} (WS-x.y)
+- `web/` uses Prettier (single quotes, printWidth 120); run `npm run format --prefix web` before committing web changes; `format:check` is separate from `lint` (WS-1.2)
 
 ### Gotchas
 - Vite denies `?raw` imports of dotfiles (e.g. `web/.npmrc`); tests cannot read them that way (WS-1.1)
@@ -43,4 +43,5 @@ metadata:
 - Vitest shows test `console.info` output only with `--reporter=verbose` (WS-1.1)
 - React Flow in jsdom renders edges only if nodes set `initialWidth`, `initialHeight` and `handles`; ResizeObserver/offset stubs alone are not enough (WS-1.1)
 - Vitest jsdom browser-API stubs must be set on both `window` and `globalThis` (WS-1.1)
+- Vitest default forks pool can time out starting workers on a loaded Windows machine; `--pool=vmThreads` is a working fallback (WS-1.2)
 - Agent worktree shells reject compound commands (`cd …`, chains, heredocs); use Write/Edit tools and single `npm --prefix web` calls (WS-1.1)
