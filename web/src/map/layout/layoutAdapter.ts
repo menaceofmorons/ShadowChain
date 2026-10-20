@@ -1,6 +1,13 @@
 import { LayoutError } from './types';
 import type { LayoutRequest, LayoutRequestMessage, LayoutResponseMessage, PlacedNode } from './types';
 import type { Endpoint } from './transport';
+import { isValidResponse, responseId } from './validateResponse';
+
+export const DEFAULT_LAYOUT_TIMEOUT_MS = 10_000;
+
+export interface LayoutAdapterOptions {
+  readonly timeoutMs?: number;
+}
 
 export interface LayoutAdapter {
   layout(request: LayoutRequest): Promise<readonly PlacedNode[]>;
@@ -9,19 +16,47 @@ export interface LayoutAdapter {
 interface Pending {
   readonly resolve: (nodes: readonly PlacedNode[]) => void;
   readonly reject: (error: LayoutError) => void;
+  readonly timer: ReturnType<typeof setTimeout>;
 }
 
-export function createLayoutAdapter(endpoint: Endpoint<LayoutRequestMessage, LayoutResponseMessage>): LayoutAdapter {
+const engineFailure = (message: string): LayoutError => new LayoutError({ code: 'engine-failure', message });
+
+export function createLayoutAdapter(
+  endpoint: Endpoint<LayoutRequestMessage, LayoutResponseMessage>,
+  options: LayoutAdapterOptions = {},
+): LayoutAdapter {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_LAYOUT_TIMEOUT_MS;
   const pending = new Map<number, Pending>();
   let nextId = 1;
+  let fatal: LayoutError | null = null;
 
-  endpoint.onMessage((message) => {
-    const entry = pending.get(message.id);
+  const settle = (id: number): Pending | undefined => {
+    const entry = pending.get(id);
+    if (entry !== undefined) {
+      clearTimeout(entry.timer);
+      pending.delete(id);
+    }
+    return entry;
+  };
+
+  const rejectAll = (error: LayoutError): void => {
+    for (const id of [...pending.keys()]) {
+      settle(id)?.reject(error);
+    }
+  };
+
+  endpoint.onMessage((message: unknown) => {
+    const id = responseId(message);
+    if (id === null) {
+      return;
+    }
+    const entry = settle(id);
     if (entry === undefined) {
       return;
     }
-    pending.delete(message.id);
-    if (message.ok) {
+    if (!isValidResponse(message)) {
+      entry.reject(engineFailure('worker returned an invalid response'));
+    } else if (message.ok) {
       entry.resolve(message.nodes);
     } else {
       entry.reject(new LayoutError(message.error));
@@ -29,19 +64,31 @@ export function createLayoutAdapter(endpoint: Endpoint<LayoutRequestMessage, Lay
   });
 
   endpoint.onError((reason) => {
-    const entries = [...pending.values()];
-    pending.clear();
-    for (const entry of entries) {
-      entry.reject(new LayoutError({ code: 'engine-failure', message: reason }));
-    }
+    fatal = engineFailure(reason);
+    rejectAll(fatal);
+  });
+
+  endpoint.onMessageError((reason) => {
+    rejectAll(engineFailure(reason));
   });
 
   return {
-    layout: (request) =>
-      new Promise((resolve, reject) => {
+    layout: (request) => {
+      if (fatal !== null) {
+        return Promise.reject(fatal);
+      }
+      return new Promise((resolve, reject) => {
         const id = nextId++;
-        pending.set(id, { resolve, reject });
-        endpoint.post({ id, request });
-      }),
+        const timer = setTimeout(() => {
+          settle(id)?.reject(engineFailure(`layout request timed out after ${String(timeoutMs)} ms`));
+        }, timeoutMs);
+        pending.set(id, { resolve, reject, timer });
+        try {
+          endpoint.post({ id, request });
+        } catch (error) {
+          settle(id)?.reject(engineFailure(error instanceof Error ? error.message : String(error)));
+        }
+      });
+    },
   };
 }

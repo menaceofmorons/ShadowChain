@@ -2,6 +2,7 @@ export interface Endpoint<Out, In> {
   post(message: Out): void;
   onMessage(handler: (message: In) => void): void;
   onError(handler: (reason: string) => void): void;
+  onMessageError(handler: (reason: string) => void): void;
 }
 
 export function createMemoryChannel<A, B>(): { a: Endpoint<A, B>; b: Endpoint<B, A> } {
@@ -20,6 +21,7 @@ export function createMemoryChannel<A, B>(): { a: Endpoint<A, B>; b: Endpoint<B,
         handlerA = handler;
       },
       onError: () => undefined,
+      onMessageError: () => undefined,
     },
     b: {
       post: (message) => {
@@ -29,6 +31,7 @@ export function createMemoryChannel<A, B>(): { a: Endpoint<A, B>; b: Endpoint<B,
         handlerB = handler;
       },
       onError: () => undefined,
+      onMessageError: () => undefined,
     },
   };
 }
@@ -53,6 +56,8 @@ export function endpointFromWorker<Out, In>(worker: WorkerLike): Endpoint<Out, I
       worker.addEventListener('error', (event) => {
         handler(event instanceof ErrorEvent ? event.message : 'worker error');
       });
+    },
+    onMessageError: (handler) => {
       worker.addEventListener('messageerror', () => {
         handler('worker message could not be deserialised');
       });
