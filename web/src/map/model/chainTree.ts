@@ -22,8 +22,7 @@ interface Candidate {
   connection: ChainConnection;
 }
 
-const byCreation = (a: ChainConnection, b: ChainConnection): number =>
-  a.createdAt - b.createdAt || a.id - b.id;
+const byCreation = (a: ChainConnection, b: ChainConnection): number => a.createdAt - b.createdAt || a.id - b.id;
 
 const otherEnd = (connection: ChainConnection, systemId: SystemId): SystemId | null =>
   connection.endA === systemId ? connection.endB : connection.endA;

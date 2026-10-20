@@ -6,13 +6,7 @@ import { createMemoryChannel } from './transport';
 import { createWorkerHost } from './workerHost';
 import { createStubEngine } from './testing/stubEngine';
 import { LayoutError } from './types';
-import type {
-  LayoutEngine,
-  LayoutRequest,
-  LayoutRequestMessage,
-  LayoutResponseMessage,
-  PlacedNode,
-} from './types';
+import type { LayoutEngine, LayoutRequest, LayoutRequestMessage, LayoutResponseMessage, PlacedNode } from './types';
 
 const conn = (id: number, createdAt: number, endA: number, endB: number): ChainConnection => ({
   id,

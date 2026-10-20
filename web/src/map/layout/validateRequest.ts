@@ -5,8 +5,7 @@ const fail = (message: string): never => {
   throw new LayoutError({ code: 'malformed-request', message });
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
 const requireStringArray = (value: unknown, name: string): void => {
   if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {

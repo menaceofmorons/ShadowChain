@@ -23,16 +23,19 @@ describe('buildChainTree', () => {
   });
 
   it('branches and orders children by creation time then id', () => {
-    const tree = build(
-      [1, 2, 3, 4],
-      [conn(12, 5, 1, 4), conn(10, 5, 1, 2), conn(11, 3, 3, 1)],
-    );
+    const tree = build([1, 2, 3, 4], [conn(12, 5, 1, 4), conn(10, 5, 1, 2), conn(11, 3, 3, 1)]);
     expect(tree.root.children.map((n) => n.keyString)).toEqual(['s:3', 's:2', 's:4']);
   });
 
   it('keeps a loop as primary plus an alias leaf keyed by its attaching connection', () => {
     const tree = build([1, 2, 3], [conn(10, 1, 1, 2), conn(11, 2, 2, 3), conn(12, 3, 3, 1)]);
-    expect(shape(tree.root)).toEqual(['s:1', [['s:2', [['a:3:11', []]]], ['s:3', []]]]);
+    expect(shape(tree.root)).toEqual([
+      's:1',
+      [
+        ['s:2', [['a:3:11', []]]],
+        ['s:3', []],
+      ],
+    ]);
     const alias = (tree.root.children[0] as ChainNode).children[0] as ChainNode;
     expect(alias.kind).toBe('alias');
     expect(alias.children).toEqual([]);
@@ -51,12 +54,18 @@ describe('buildChainTree', () => {
     const all = [conn(10, 1, 1, 2), conn(11, 2, 1, 3), conn(12, 3, 2, 4), conn(13, 4, 3, 4)];
     expect(shape(build([1, 2, 3, 4], all).root)).toEqual([
       's:1',
-      [['s:2', [['s:4', []]]], ['s:3', [['a:4:13', []]]]],
+      [
+        ['s:2', [['s:4', []]]],
+        ['s:3', [['a:4:13', []]]],
+      ],
     ]);
     const without = all.filter((c) => c.id !== 12);
     expect(shape(build([1, 2, 3, 4], without).root)).toEqual([
       's:1',
-      [['s:2', []], ['s:3', [['s:4', []]]]],
+      [
+        ['s:2', []],
+        ['s:3', [['s:4', []]]],
+      ],
     ]);
   });
 
@@ -70,10 +79,7 @@ describe('buildChainTree', () => {
   });
 
   it('makes an alias with parallel connections one node keyed by the first connection', () => {
-    const tree = build(
-      [1, 2, 3],
-      [conn(10, 1, 1, 2), conn(11, 2, 1, 3), conn(12, 3, 2, 3), conn(13, 4, 3, 2)],
-    );
+    const tree = build([1, 2, 3], [conn(10, 1, 1, 2), conn(11, 2, 1, 3), conn(12, 3, 2, 3), conn(13, 4, 3, 2)]);
     const two = tree.root.children[0] as ChainNode;
     expect(two.children).toHaveLength(1);
     expect(two.children[0]?.parentEdge).toEqual({ connectionId: 12, parallelConnectionIds: [13] });
@@ -90,8 +96,7 @@ describe('buildChainTree', () => {
   it('appends new connections after existing siblings', () => {
     const before = [conn(10, 1, 1, 2), conn(11, 2, 1, 3)];
     const after = [...before, conn(12, 3, 1, 4)];
-    const kids = (c: ChainConnection[]) =>
-      build([1, 2, 3, 4], c).root.children.map((n) => n.keyString);
+    const kids = (c: ChainConnection[]) => build([1, 2, 3, 4], c).root.children.map((n) => n.keyString);
     expect(kids(before)).toEqual(['s:2', 's:3']);
     expect(kids(after)).toEqual(['s:2', 's:3', 's:4']);
   });

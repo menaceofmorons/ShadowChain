@@ -42,6 +42,5 @@ export const wanderer98: MultiDragFixture = {
   staleUpdate: {
     positions: [at('s:1', 0, 0), at('s:2', 300, -100), at('s:3', 300, 0), at('s:4', 300, 100)],
   },
-  expected:
-    'One batch carries every moved node at its dragged position; the later stale update never reverts them.',
+  expected: 'One batch carries every moved node at its dragged position; the later stale update never reverts them.',
 };

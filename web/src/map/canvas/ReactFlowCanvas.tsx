@@ -1,12 +1,12 @@
-import { useMemo } from "react";
-import { Position, ReactFlow, type Edge, type Node } from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
-import type { CanvasAdapterProps } from "./canvasAdapter";
+import { useMemo } from 'react';
+import { Position, ReactFlow, type Edge, type Node } from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+import type { CanvasAdapterProps } from './canvasAdapter';
 
 const PLACEHOLDER_WIDTH = 150;
 const PLACEHOLDER_HEIGHT = 36;
 
-export function movedNodes(dragged: readonly Pick<Node, "id" | "position">[]): { key: string; x: number; y: number }[] {
+export function movedNodes(dragged: readonly Pick<Node, 'id' | 'position'>[]): { key: string; x: number; y: number }[] {
   return dragged.map((n) => ({ key: n.id, x: n.position.x, y: n.position.y }));
 }
 
@@ -20,8 +20,15 @@ export function ReactFlowCanvas({ nodes, edges, onNodeSelect, onNodesMoved }: Ca
         initialWidth: PLACEHOLDER_WIDTH,
         initialHeight: PLACEHOLDER_HEIGHT,
         handles: [
-          { type: "target", position: Position.Top, x: PLACEHOLDER_WIDTH / 2, y: 0, width: 1, height: 1 },
-          { type: "source", position: Position.Bottom, x: PLACEHOLDER_WIDTH / 2, y: PLACEHOLDER_HEIGHT, width: 1, height: 1 },
+          { type: 'target', position: Position.Top, x: PLACEHOLDER_WIDTH / 2, y: 0, width: 1, height: 1 },
+          {
+            type: 'source',
+            position: Position.Bottom,
+            x: PLACEHOLDER_WIDTH / 2,
+            y: PLACEHOLDER_HEIGHT,
+            width: 1,
+            height: 1,
+          },
         ],
       })),
     [nodes],
