@@ -24,3 +24,4 @@ export { DEFAULT_LAYOUT_TIMEOUT_MS } from './layoutAdapter';
 export type { LayoutAdapterOptions } from './layoutAdapter';
 export { createMemoryChannel, endpointFromWorker } from './transport';
 export type { Endpoint, WorkerLike } from './transport';
+export * from './engines';
