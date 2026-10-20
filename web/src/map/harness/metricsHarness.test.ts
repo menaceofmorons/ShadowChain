@@ -90,6 +90,42 @@ describe('runHarness', () => {
     expect(report.codeSize).toEqual({ bytes: 4, nonBlankLines: 2 });
   });
 
+  it('repeats the full layout and reports additions and removals separately', async () => {
+    const report = await runHarness({
+      label: 'repeat',
+      engine: createStubEngine(),
+      graph,
+      rootSystemId: 1,
+      churn: [
+        { kind: 'add', connection: addConnection },
+        { kind: 'remove', connectionId: 2 },
+      ],
+      engineSources: [],
+      fullRepeats: 3,
+      now: sequenceClock([0, 4, 10, 16, 20, 28, 30, 31, 40, 48]),
+    });
+    expect(report.fullLayoutMs).toEqual({ count: 3, median: 6, p95: 8, max: 8 });
+    expect(report.additionLayoutMs).toEqual({ count: 1, median: 1, p95: 1, max: 1 });
+    expect(report.removalLayoutMs).toEqual({ count: 1, median: 8, p95: 8, max: 8 });
+    expect(report.incrementalLayoutMs.count).toBe(2);
+    expect(formatReport(report)).toContain('addition layout time');
+    expect(formatReport(report)).toContain('removal layout time');
+  });
+
+  it.each([0, -1, 1.5])('rejects a full repeat count of %s', async (fullRepeats) => {
+    await expect(
+      runHarness({
+        label: 'bad',
+        engine: createStubEngine(),
+        graph,
+        rootSystemId: 1,
+        churn: [],
+        engineSources: [],
+        fullRepeats,
+      }),
+    ).rejects.toThrow(/fullRepeats/);
+  });
+
   it('reports zero movement for the stub engine on a hand-built addition', async () => {
     const report = await runHarness({
       label: 'stub',

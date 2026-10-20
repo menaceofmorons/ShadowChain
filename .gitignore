@@ -14,6 +14,8 @@
 # Frontend dependencies and build output
 web/node_modules/
 web/dist/
+web/test-results/
+web/playwright-report/
 # Compiled binary
 /shadowchain
 /shadowchain.exe

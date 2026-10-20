@@ -17,6 +17,8 @@ export function formatReport(report: HarnessReport): string {
     statsRow('nodes moved per addition', report.nodesMovedPerAddition),
     statsRow('full layout time (ms)', report.fullLayoutMs),
     statsRow('incremental layout time (ms)', report.incrementalLayoutMs),
+    statsRow('addition layout time (ms)', report.additionLayoutMs),
+    statsRow('removal layout time (ms)', report.removalLayoutMs),
   ];
   const widths = (rows[0] ?? []).map((_, column) => Math.max(...rows.map((row) => (row[column] ?? '').length)));
   const table = rows.map((row) =>

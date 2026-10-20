@@ -8,10 +8,12 @@ class DOMMatrixReadOnlyStub {
   m22 = 1;
 }
 
-Object.assign(window, {
-  ResizeObserver: ResizeObserverStub,
-  DOMMatrixReadOnly: DOMMatrixReadOnlyStub,
-});
+if (typeof window !== 'undefined') {
+  Object.assign(window, {
+    ResizeObserver: ResizeObserverStub,
+    DOMMatrixReadOnly: DOMMatrixReadOnlyStub,
+  });
+}
 
 Object.assign(globalThis, {
   ResizeObserver: ResizeObserverStub,
