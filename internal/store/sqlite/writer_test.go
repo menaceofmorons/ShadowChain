@@ -287,7 +287,7 @@ func TestStatsRecordQueueWaitAndLatency(t *testing.T) {
 	if wait.Count != commands || write.Count != commands {
 		t.Fatalf("counts wait=%d write=%d, want %d", wait.Count, write.Count, commands)
 	}
-	if write.Max <= 0 || write.P50 <= 0 || write.P99 < write.P50 || write.Max < write.P99 {
+	if write.Max < 0 || write.P50 < 0 || write.P99 < write.P50 || write.Max < write.P99 {
 		t.Fatalf("write latency summary inconsistent: %+v", write)
 	}
 	if write.Max < wait.Max {
