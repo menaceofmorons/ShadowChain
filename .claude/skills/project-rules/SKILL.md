@@ -1,6 +1,6 @@
 ---
 name: project-rules
-description: Project-wide rules for every session and agent - excluded directories, document versions, path format, working rules (design authority, path discipline, scope, locks, Markdown, Execution Config rows), protocol triggers, code comments. Preloaded into all agents; imported by CLAUDE.md; read first by CoWork.
+description: Project-wide rules for every session and agent - excluded directories, document versions, path format, working rules (design authority, path discipline, scope, locks, worktree removal, Markdown, Execution Config rows), protocol triggers, code comments. Preloaded into all agents; imported by CLAUDE.md; read first by CoWork.
 user-invocable: false
 metadata:
   source: project-rules template v5.0
@@ -37,6 +37,7 @@ Target build output and generated folders, never source folders. The file-tool p
 - **Path discipline:** access only paths named by your session instructions, `#NP`, the active protocol or brief, or the Developer. No orientation scans.
 - **Scope:** change only what the active plan, brief or Developer scopes; leave all other behaviour untouched.
 - **Locks:** on a read/write lock failure, retry once, then stop and report.
+- **Worktrees:** remove a worktree only with `py tools/worktree_clean.py remove [--force] {path}` (Team Lead and Developer only), and clear leftovers with `py tools/worktree_clean.py sweep`. Never use bare `git worktree remove`: OneDrive marks folders read-only, which Windows won't delete, and the tool clears that first. If it still fails, report its output.
 - **Execution Config rows:** a row in `.claude/execution-config.md` whose `Requires` file does not exist in your working directory does not apply. Skip it and report it as `N/A ({path} absent)`, never as a pass or a fail. Never create a `Requires` file unless your scope delivers it.
 - **Markdown:** write each paragraph as one unwrapped line.
 

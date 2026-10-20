@@ -23,6 +23,7 @@ rules = [
     (G + r"\breset\b[^;&|\n]*--hard", "git reset --hard is not permitted"),
     (G + r"\bbranch\b[^;&|\n]*\s-(d|D)\b", "deleting branches is reserved for the Team Lead"),
     (G + r"\bworktree\b", "worktree management is reserved for the Team Lead"),
+    (r"\bworktree_clean\b", "worktree management is reserved for the Team Lead"),
     (G + r"\s(-C|--git-dir|--work-tree)\b", "run git only in your own worktree"),
 ]
 if agent != "pkg-integrator":
