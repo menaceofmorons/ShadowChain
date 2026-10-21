@@ -122,14 +122,14 @@ function freshSlots(request: LayoutRequest, options: EngineOptions): Map<string,
   });
 
   const slots = new Map<string, Slot>();
-  const nodes = [root, ...request.tree.nodes.filter((node) => node !== root)];
+  const nodes = [root, ...request.tree.nodes.filter((node) => node.keyString !== root.keyString)];
   for (const node of nodes) {
     const extent = extentOf(node, request.mode, options);
     const depth = depths.get(node.keyString);
     if (depth === undefined) {
       continue;
     }
-    const centre = node === root ? 0 : (offsets.get(node.keyString) ?? 0);
+    const centre = node.keyString === root.keyString ? 0 : (offsets.get(node.keyString) ?? 0);
     const band = levelAlong[depth] as number;
     slots.set(node.keyString, {
       across: centre - extent.across / 2,
@@ -145,6 +145,89 @@ const overlaps = (a: Rect, b: Rect): boolean =>
   a.along < b.along + b.alongSize &&
   b.along < a.along + a.alongSize;
 
+class PlacementState {
+  readonly slots = new Map<string, Slot>();
+  private readonly rectsByKey = new Map<string, Rect>();
+  private readonly rectsByAlong = new Map<number, Rect[]>();
+
+  constructor(
+    private readonly mode: LayoutMode,
+    private readonly options: EngineOptions,
+  ) {}
+
+  rectOf(key: string): Rect | undefined {
+    return this.rectsByKey.get(key);
+  }
+
+  has(key: string): boolean {
+    return this.slots.has(key);
+  }
+
+  remember(node: ChainNode, slot: Slot): void {
+    const extent = extentOf(node, this.mode, this.options);
+    this.store(node.keyString, {
+      across: slot.across,
+      along: slot.along,
+      acrossSize: extent.across,
+      alongSize: extent.along,
+    });
+  }
+
+  place(node: ChainNode, parent: ChainNode | undefined): void {
+    const extent = extentOf(node, this.mode, this.options);
+    const parentRect = parent === undefined ? undefined : this.rectsByKey.get(parent.keyString);
+    let across = 0;
+    let along = 0;
+    if (parent !== undefined && parentRect !== undefined) {
+      along = parentRect.along + parentRect.alongSize + this.options.levelSpacing;
+      const siblings = childrenOf(parent);
+      const earlier = siblings
+        .slice(0, siblings.indexOf(node))
+        .map((sibling) => this.rectsByKey.get(sibling.keyString))
+        .filter((rect): rect is Rect => rect !== undefined);
+      const rightmost = earlier.reduce(
+        (max, rect) => Math.max(max, rect.across + rect.acrossSize),
+        Number.NEGATIVE_INFINITY,
+      );
+      across =
+        earlier.length > 0
+          ? rightmost + this.options.siblingSpacing
+          : parentRect.across + parentRect.acrossSize / 2 - extent.across / 2;
+    }
+    const candidate: Rect = { across, along, acrossSize: extent.across, alongSize: extent.along };
+    this.slideClear(candidate);
+    this.store(node.keyString, candidate);
+  }
+
+  private slideClear(candidate: Rect): void {
+    const crossing: Rect[] = [];
+    for (const bucket of this.rectsByAlong.values()) {
+      for (const rect of bucket) {
+        if (candidate.along < rect.along + rect.alongSize && rect.along < candidate.along + candidate.alongSize) {
+          crossing.push(rect);
+        }
+      }
+    }
+    crossing.sort((a, b) => a.across - b.across);
+    for (const rect of crossing) {
+      if (overlaps(candidate, rect)) {
+        candidate.across = rect.across + rect.acrossSize + this.options.siblingSpacing;
+      }
+    }
+  }
+
+  private store(key: string, rect: Rect): void {
+    this.slots.set(key, { across: rect.across, along: rect.along });
+    this.rectsByKey.set(key, rect);
+    const bucket = this.rectsByAlong.get(rect.along);
+    if (bucket === undefined) {
+      this.rectsByAlong.set(rect.along, [rect]);
+    } else {
+      bucket.push(rect);
+    }
+  }
+}
+
 function incrementalSlots(request: LayoutRequest, options: EngineOptions): Map<string, Slot> {
   if (request.type !== 'incremental') {
     return freshSlots(request, options);
@@ -152,24 +235,12 @@ function incrementalSlots(request: LayoutRequest, options: EngineOptions): Map<s
   const mode = request.mode;
   const nodes = new Map(request.tree.nodes.map((node) => [node.keyString, node]));
   const removed = new Set(request.removedNodeKeys);
-  const slots = new Map<string, Slot>();
-  const rects = new Map<string, Rect>();
-
-  const remember = (node: ChainNode, slot: Slot): void => {
-    const extent = extentOf(node, mode, options);
-    slots.set(node.keyString, slot);
-    rects.set(node.keyString, {
-      across: slot.across,
-      along: slot.along,
-      acrossSize: extent.across,
-      alongSize: extent.along,
-    });
-  };
+  const state = new PlacementState(mode, options);
 
   for (const prior of request.previous) {
     const node = nodes.get(prior.nodeKey);
     if (node !== undefined && !removed.has(prior.nodeKey)) {
-      remember(node, toSlot(mode, prior.x, prior.y));
+      state.remember(node, toSlot(mode, prior.x, prior.y));
     }
   }
 
@@ -182,50 +253,16 @@ function incrementalSlots(request: LayoutRequest, options: EngineOptions): Map<s
 
   const pending = new Set(request.addedNodeKeys);
   for (const node of request.tree.nodes) {
-    if (slots.has(node.keyString) || !pending.has(node.keyString)) {
-      continue;
+    if (!state.has(node.keyString) && pending.has(node.keyString)) {
+      state.place(node, parents.get(node.keyString));
     }
-    placeAdded(node);
   }
   for (const node of request.tree.nodes) {
-    if (!slots.has(node.keyString)) {
-      placeAdded(node);
+    if (!state.has(node.keyString)) {
+      state.place(node, parents.get(node.keyString));
     }
   }
-  return slots;
-
-  function placeAdded(node: ChainNode): void {
-    const extent = extentOf(node, mode, options);
-    const parent = parents.get(node.keyString);
-    const parentRect = parent === undefined ? undefined : rects.get(parent.keyString);
-    let across = 0;
-    let along = 0;
-    if (parent !== undefined && parentRect !== undefined) {
-      along = parentRect.along + parentRect.alongSize + options.levelSpacing;
-      const earlier = childrenOf(parent)
-        .slice(0, childrenOf(parent).indexOf(node))
-        .map((sibling) => rects.get(sibling.keyString))
-        .filter((rect): rect is Rect => rect !== undefined);
-      const rightmost = earlier.reduce(
-        (max, rect) => Math.max(max, rect.across + rect.acrossSize),
-        Number.NEGATIVE_INFINITY,
-      );
-      across =
-        earlier.length > 0
-          ? rightmost + options.siblingSpacing
-          : parentRect.across + parentRect.acrossSize / 2 - extent.across / 2;
-    }
-    const candidate: Rect = { across, along, acrossSize: extent.across, alongSize: extent.along };
-    for (;;) {
-      const blocker = [...rects.values()].find((rect) => overlaps(candidate, rect));
-      if (blocker === undefined) {
-        break;
-      }
-      candidate.across = blocker.across + blocker.acrossSize + options.siblingSpacing;
-    }
-    slots.set(node.keyString, { across: candidate.across, along: candidate.along });
-    rects.set(node.keyString, candidate);
-  }
+  return state.slots;
 }
 
 function placeNodes(request: LayoutRequest, options: EngineOptions): PlacedNode[] {
