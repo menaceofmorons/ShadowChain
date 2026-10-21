@@ -151,18 +151,23 @@ describe('elk engine mode shapes', () => {
     expect(span(right, 'x')).toBeGreaterThan(0);
   });
 
+  const depthsOf = (tree: ChainTree): Map<string, number> => {
+    const depths = new Map<string, number>();
+    const walk = (node: ChainNode, depth: number): void => {
+      depths.set(node.keyString, depth);
+      node.children.forEach((child) => {
+        walk(child, depth + 1);
+      });
+    };
+    walk(tree.root, 0);
+    return depths;
+  };
+
   it.each(SYNTHETIC_NODE_COUNTS)(
-    'radial puts every level on its own ring around the root at %i nodes',
+    'radial puts every level on one ring at a fixed radius step at %i nodes',
     async (count) => {
       const tree = treeOf(count);
-      const depths = new Map<string, number>();
-      const walk = (node: ChainNode, depth: number): void => {
-        depths.set(node.keyString, depth);
-        node.children.forEach((child) => {
-          walk(child, depth + 1);
-        });
-      };
-      walk(tree.root, 0);
+      const depths = depthsOf(tree);
       const placed = await engine.layout(full(tree, 'radial'));
       const rootCentre = centre(placed.find((n) => n.nodeKey === tree.root.keyString) as PlacedNode);
       const ringByDepth = new Map<number, number[]>();
@@ -173,14 +178,53 @@ describe('elk engine mode shapes', () => {
       }
       const rings = [...ringByDepth.entries()].sort(([a], [b]) => a - b).map(([, radii]) => radii);
       expect(rings.length).toBeGreaterThan(2);
+      const step = (rings[1] as number[])[0] as number;
+      expect(step).toBeGreaterThan(0);
       rings.forEach((radii, index) => {
         expect(Math.max(...radii) - Math.min(...radii), `ring ${String(index)} spread`).toBeLessThan(1);
-        if (index > 0) {
-          expect(Math.min(...radii), `ring ${String(index)} outside ring ${String(index - 1)}`).toBeGreaterThan(
-            Math.max(...(rings[index - 1] as number[])),
-          );
+        expect(Math.abs((radii[0] as number) - index * step), `ring ${String(index)} step`).toBeLessThan(1);
+        if (index > 1) {
+          expect(radii[0] as number).toBeGreaterThan((rings[index - 1] as number[])[0] as number);
         }
       });
+    },
+  );
+
+  it.each(SYNTHETIC_NODE_COUNTS)(
+    'radial keeps each subtree inside its own angular range at %i nodes',
+    async (count) => {
+      const tree = treeOf(count);
+      const placed = await engine.layout(full(tree, 'radial'));
+      const centres = new Map(placed.map((n) => [n.nodeKey, centre(n)]));
+      const rootCentre = centres.get(tree.root.keyString) as { x: number; y: number };
+      const angleOf = (key: string): number => {
+        const c = centres.get(key) as { x: number; y: number };
+        return Math.atan2(c.y - rootCentre.y, c.x - rootCentre.x);
+      };
+      const wrap = (angle: number, isRoot: boolean): number => {
+        const wrapped = Math.atan2(Math.sin(angle), Math.cos(angle));
+        return isRoot && wrapped < 0 ? wrapped + 2 * Math.PI : wrapped;
+      };
+      const collect = (node: ChainNode): string[] => [node.keyString, ...node.children.flatMap(collect)];
+      const visit = (node: ChainNode): void => {
+        const isRoot = node === tree.root;
+        const base = isRoot ? 0 : angleOf(node.keyString);
+        const intervals = node.children
+          .map((child) => {
+            const rel = collect(child).map((key) => wrap(angleOf(key) - base, isRoot));
+            return { lo: Math.min(...rel), hi: Math.max(...rel) };
+          })
+          .sort((a, b) => a.lo - b.lo);
+        intervals.forEach((interval, index) => {
+          if (index > 0) {
+            expect((intervals[index - 1] as { hi: number }).hi).toBeLessThanOrEqual(interval.lo + 1e-9);
+          }
+        });
+        node.children.forEach(visit);
+      };
+      if (tree.root.children.length > 1) {
+        visit(tree.root);
+      }
     },
   );
 });
