@@ -190,43 +190,75 @@ describe('elk engine mode shapes', () => {
     },
   );
 
+  const radialTurns = async (tree: ChainTree) => {
+    const placed = await engine.layout(full(tree, 'radial'));
+    const centres = new Map(placed.map((n) => [n.nodeKey, centre(n)]));
+    const rootCentre = centres.get(tree.root.keyString) as { x: number; y: number };
+    const turnOf = (key: string): number => {
+      const c = centres.get(key) as { x: number; y: number };
+      const turn = Math.atan2(c.y - rootCentre.y, c.x - rootCentre.x);
+      return turn < 0 ? turn + 2 * Math.PI : turn;
+    };
+    return { placed, turnOf };
+  };
+
+  const levelsOf = (tree: ChainTree): ChainNode[][] => {
+    const levels: ChainNode[][] = [];
+    const walk = (node: ChainNode, depth: number): void => {
+      (levels[depth] ??= []).push(node);
+      node.children.forEach((child) => {
+        walk(child, depth + 1);
+      });
+    };
+    walk(tree.root, 0);
+    return levels;
+  };
+
   it.each(SYNTHETIC_NODE_COUNTS)(
-    'radial keeps each subtree inside its own angular range at %i nodes',
+    'radial keeps parent order on every ring so connectors never cross at %i nodes',
     async (count) => {
       const tree = treeOf(count);
-      const placed = await engine.layout(full(tree, 'radial'));
-      const centres = new Map(placed.map((n) => [n.nodeKey, centre(n)]));
-      const rootCentre = centres.get(tree.root.keyString) as { x: number; y: number };
-      const angleOf = (key: string): number => {
-        const c = centres.get(key) as { x: number; y: number };
-        return Math.atan2(c.y - rootCentre.y, c.x - rootCentre.x);
-      };
-      const wrap = (angle: number, isRoot: boolean): number => {
-        const wrapped = Math.atan2(Math.sin(angle), Math.cos(angle));
-        return isRoot && wrapped < 0 ? wrapped + 2 * Math.PI : wrapped;
-      };
-      const collect = (node: ChainNode): string[] => [node.keyString, ...node.children.flatMap(collect)];
-      const visit = (node: ChainNode): void => {
-        const isRoot = node === tree.root;
-        const base = isRoot ? 0 : angleOf(node.keyString);
-        const intervals = node.children
-          .map((child) => {
-            const rel = collect(child).map((key) => wrap(angleOf(key) - base, isRoot));
-            return { lo: Math.min(...rel), hi: Math.max(...rel) };
-          })
-          .sort((a, b) => a.lo - b.lo);
-        intervals.forEach((interval, index) => {
-          if (index > 0) {
-            expect((intervals[index - 1] as { hi: number }).hi).toBeLessThanOrEqual(interval.lo + 1e-9);
-          }
-        });
-        node.children.forEach(visit);
-      };
-      if (tree.root.children.length > 1) {
-        visit(tree.root);
-      }
+      const { turnOf } = await radialTurns(tree);
+      const levels = levelsOf(tree);
+      const parentOf = new Map<string, string>();
+      tree.nodes.forEach((node) => {
+        node.children.forEach((child) => parentOf.set(child.keyString, node.keyString));
+      });
+      levels.slice(2).forEach((level, offset) => {
+        const parentRank = new Map(
+          (levels[offset + 1] as ChainNode[])
+            .map((node) => ({ key: node.keyString, turn: turnOf(node.keyString) }))
+            .sort((a, b) => a.turn - b.turn)
+            .map(({ key }, rank) => [key, rank]),
+        );
+        const ranks = level
+          .map((node) => ({
+            turn: turnOf(node.keyString),
+            rank: parentRank.get(parentOf.get(node.keyString) as string) as number,
+          }))
+          .sort((a, b) => a.turn - b.turn)
+          .map(({ rank }) => rank);
+        expect(ranks, `ring ${String(offset + 2)}`).toEqual([...ranks].sort((a, b) => a - b));
+      });
     },
   );
+
+  it.each(SYNTHETIC_NODE_COUNTS)('radial spreads the first ring evenly around the root at %i nodes', async (count) => {
+    const tree = treeOf(count);
+    const { turnOf } = await radialTurns(tree);
+    const turns = tree.root.children.map((child) => turnOf(child.keyString)).sort((a, b) => a - b);
+    turns.forEach((turn, index) => {
+      const previous = index === 0 ? (turns.at(-1) as number) - 2 * Math.PI : (turns[index - 1] as number);
+      expect(turn - previous).toBeCloseTo((2 * Math.PI) / turns.length, 2);
+    });
+  });
+
+  it('radial stays compact at 150 nodes', async () => {
+    const placed = await engine.layout(full(treeOf(150), 'radial'));
+    const extent = (axis: 'x' | 'y') =>
+      Math.max(...placed.map((n) => n[axis])) - Math.min(...placed.map((n) => n[axis]));
+    expect(Math.max(extent('x'), extent('y'))).toBeLessThan(6000);
+  });
 });
 
 describe('elk engine through the worker host', () => {
