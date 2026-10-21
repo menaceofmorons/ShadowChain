@@ -47,6 +47,11 @@ export function createRoutedEngine(registry: EngineRegistry = DEFAULT_ENGINE_REG
     }
     const created = entry.createEngine();
     engines.set(entry.id, created);
+    created.catch(() => {
+      if (engines.get(entry.id) === created) {
+        engines.delete(entry.id);
+      }
+    });
     return created;
   };
   return {

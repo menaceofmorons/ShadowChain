@@ -12,7 +12,7 @@ export interface RegistryAdapter extends LayoutAdapter {
 export function createRegistryAdapter(registry: EngineRegistry = DEFAULT_ENGINE_REGISTRY): RegistryAdapter {
   const workers = new Map<EngineId, { worker: Worker; adapter: LayoutAdapter }>();
   return {
-    layout: (request) => {
+    layout: async (request) => {
       const entry = registry[request.mode];
       let running = workers.get(entry.id);
       if (running === undefined) {
@@ -23,7 +23,7 @@ export function createRegistryAdapter(registry: EngineRegistry = DEFAULT_ENGINE_
         };
         workers.set(entry.id, running);
       }
-      return running.adapter.layout(request);
+      return await running.adapter.layout(request);
     },
     dispose: () => {
       for (const { worker } of workers.values()) {
