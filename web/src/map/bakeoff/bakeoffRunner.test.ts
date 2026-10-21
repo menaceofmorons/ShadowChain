@@ -56,11 +56,11 @@ describe('measureStability', () => {
 });
 
 describe('measureWanderer553', () => {
-  it('passes only when the new node overlaps nothing and no placed node moves', async () => {
-    for (const candidate of [stable, shifting]) {
-      const row = await measureWanderer553(candidate, 'top-down');
-      expect(row.pass).toBe(!row.newNodeOverlaps && row.placedNodesMoved === 0);
-    }
+  it('moves no placed node for the stable engine and fails on the stub overlapping the new node', async () => {
+    const row = await measureWanderer553(stable, 'top-down');
+    expect(row.placedNodesMoved).toBe(0);
+    expect(row.newNodeOverlaps).toBe(true);
+    expect(row.pass).toBe(false);
   });
 
   it('records moved placed nodes for a shifting engine', async () => {
