@@ -7,8 +7,8 @@ import type { LayoutEngine, LayoutMode, LayoutRequest, PlacedNode } from '../../
 
 const RANDOM_SEED = '1';
 const RADIAL_COMPACTION_STEP = '8';
-const RING_STEP_GROWTH = 1.12;
-const MAX_RING_STEP_ATTEMPTS = 60;
+const RING_STEP_GROWTH = 1.03;
+const MAX_RING_STEP_ATTEMPTS = 200;
 const FULL_TURN = 2 * Math.PI;
 
 // TUNE: initial radial radius per sqrt(node count) handed to elkjs, which only supplies child order.
@@ -70,10 +70,17 @@ interface Point {
   readonly y: number;
 }
 
-interface RadialSlot {
+interface Ring {
+  readonly ids: string[];
+  readonly widths: number[];
+  readonly heights: number[];
+  readonly parents: number[];
+}
+
+interface Box {
   readonly id: string;
-  readonly depth: number;
-  readonly angle: number;
+  readonly left: number;
+  readonly top: number;
   readonly width: number;
   readonly height: number;
 }
@@ -88,18 +95,7 @@ const wrapAngle = (angle: number): number => {
   return turned <= -Math.PI ? turned + FULL_TURN : turned;
 };
 
-function leafCounts(root: ChainNode): Map<string, number> {
-  const counts = new Map<string, number>();
-  const visit = (node: ChainNode): number => {
-    const count = node.children.length === 0 ? 1 : node.children.reduce((sum, child) => sum + visit(child), 0);
-    counts.set(node.keyString, count);
-    return count;
-  };
-  visit(root);
-  return counts;
-}
-
-function radialSlots(root: ChainNode, arranged: ElkNode, options: EngineOptions): RadialSlot[] {
+function buildRings(root: ChainNode, arranged: ElkNode, options: EngineOptions): Ring[] {
   const elkCentres = new Map<string, Point>();
   for (const { id, x = 0, y = 0, width = 0, height = 0 } of arranged.children ?? []) {
     elkCentres.set(id, { x: x + width / 2, y: y + height / 2 });
@@ -109,50 +105,90 @@ function radialSlots(root: ChainNode, arranged: ElkNode, options: EngineOptions)
     const centre = elkCentres.get(node.keyString) ?? origin;
     return Math.atan2(centre.y - origin.y, centre.x - origin.x);
   };
-  const leaves = leafCounts(root);
-  const slots: RadialSlot[] = [];
-  const spread = (node: ChainNode, depth: number, from: number, to: number): void => {
+  const rings: Ring[] = [];
+  const visit = (node: ChainNode, depth: number, parent: number): void => {
     const alias = node.kind === 'alias';
-    slots.push({
-      id: node.keyString,
-      depth,
-      angle: (from + to) / 2,
-      width: alias ? options.aliasWidth : options.nodeWidth,
-      height: alias ? options.aliasHeight : options.nodeHeight,
-    });
-    const total = leaves.get(node.keyString) ?? 1;
+    const ring = (rings[depth] ??= { ids: [], widths: [], heights: [], parents: [] });
+    const index = ring.ids.length;
+    ring.ids.push(node.keyString);
+    ring.widths.push(alias ? options.aliasWidth : options.nodeWidth);
+    ring.heights.push(alias ? options.aliasHeight : options.nodeHeight);
+    ring.parents.push(parent);
     const ordered = node.children
       .map((child) => ({ child, sweep: wrapAngle(elkAngle(child) - elkAngle(node)) + (depth === 0 ? FULL_TURN : 0) }))
       .sort((a, b) => a.sweep - b.sweep || a.child.keyString.localeCompare(b.child.keyString));
-    let cursor = from;
     for (const { child } of ordered) {
-      const share = ((to - from) * (leaves.get(child.keyString) ?? 1)) / total;
-      spread(child, depth + 1, cursor, cursor + share);
-      cursor += share;
+      visit(child, depth + 1, index);
     }
   };
-  spread(root, 0, 0, FULL_TURN);
-  return slots;
+  visit(root, 0, -1);
+  return rings;
 }
 
-function ringBoxes(slots: readonly RadialSlot[], step: number) {
-  return slots.map((slot) => {
-    const radius = slot.depth * step;
-    return {
-      id: slot.id,
-      left: radius * Math.cos(slot.angle) - slot.width / 2,
-      top: radius * Math.sin(slot.angle) - slot.height / 2,
-      width: slot.width,
-      height: slot.height,
-    };
-  });
+function nonDecreasingFit(values: readonly number[]): number[] {
+  const blocks: { sum: number; count: number }[] = [];
+  for (const value of values) {
+    blocks.push({ sum: value, count: 1 });
+    while (blocks.length > 1) {
+      const last = blocks[blocks.length - 1] as { sum: number; count: number };
+      const before = blocks[blocks.length - 2] as { sum: number; count: number };
+      if (before.sum / before.count <= last.sum / last.count) {
+        break;
+      }
+      blocks.splice(blocks.length - 2, 2, { sum: before.sum + last.sum, count: before.count + last.count });
+    }
+  }
+  return blocks.flatMap(({ sum, count }) => Array.from({ length: count }, () => sum / count));
 }
 
-function hasOverlap(boxes: ReturnType<typeof ringBoxes>, gap: number): boolean {
+function spaceOnRing(targets: readonly number[], gap: number): number[] {
+  const count = targets.length;
+  const fitted = nonDecreasingFit(targets.map((target, index) => target - index * gap));
+  const lowest = gap / 2;
+  const highest = FULL_TURN - gap / 2 - (count - 1) * gap;
+  return fitted.map((value, index) => Math.min(Math.max(value, lowest), highest) + index * gap);
+}
+
+function ringAngles(rings: readonly Ring[], step: number, slot: number): number[][] | null {
+  const angles: number[][] = [[0]];
+  for (let depth = 1; depth < rings.length; depth += 1) {
+    const ring = rings[depth] as Ring;
+    const gap = 2 * Math.asin(Math.min(1, slot / (2 * depth * step)));
+    if (ring.ids.length * gap > FULL_TURN) {
+      return null;
+    }
+    const before = angles[depth - 1] as number[];
+    const targets =
+      depth === 1
+        ? ring.ids.map((_, index) => ((index + 0.5) * FULL_TURN) / ring.ids.length)
+        : ring.parents.map((parent) => before[parent] as number);
+    angles.push(spaceOnRing(targets, gap));
+  }
+  return angles;
+}
+
+function ringBoxes(rings: readonly Ring[], angles: readonly (readonly number[])[], step: number): Box[] {
+  return rings.flatMap((ring, depth) =>
+    ring.ids.map((id, index) => {
+      const width = ring.widths[index] as number;
+      const height = ring.heights[index] as number;
+      const angle = (angles[depth] as readonly number[])[index] as number;
+      return {
+        id,
+        left: depth * step * Math.cos(angle) - width / 2,
+        top: depth * step * Math.sin(angle) - height / 2,
+        width,
+        height,
+      };
+    }),
+  );
+}
+
+function hasOverlap(boxes: readonly Box[], gap: number): boolean {
   for (let i = 0; i < boxes.length; i += 1) {
-    const a = boxes[i] as (typeof boxes)[number];
+    const a = boxes[i] as Box;
     for (let j = i + 1; j < boxes.length; j += 1) {
-      const b = boxes[j] as (typeof boxes)[number];
+      const b = boxes[j] as Box;
       if (
         a.left < b.left + b.width + gap &&
         b.left < a.left + a.width + gap &&
@@ -171,16 +207,21 @@ function placeOnFixedRings(
   arranged: ElkNode,
   options: EngineOptions,
 ): { id: string; x: number; y: number }[] {
-  const slots = radialSlots(root, arranged, options);
-  let step = options.nodeWidth + options.levelSpacing;
-  let boxes = ringBoxes(slots, step);
-  for (
-    let attempt = 1;
-    attempt < MAX_RING_STEP_ATTEMPTS && hasOverlap(boxes, options.siblingSpacing / 2);
-    attempt += 1
-  ) {
+  const rings = buildRings(root, arranged, options);
+  const gap = options.siblingSpacing / 2;
+  const slot = Math.hypot(options.nodeWidth + gap, options.nodeHeight + gap);
+  const crowding = Math.max(
+    ...rings.map((ring, depth) => (depth === 0 ? 0 : (ring.ids.length * slot) / (FULL_TURN * depth))),
+  );
+  let step = Math.max(options.nodeWidth + options.levelSpacing, crowding);
+  let boxes: Box[] = [];
+  for (let attempt = 0; attempt < MAX_RING_STEP_ATTEMPTS; attempt += 1) {
+    const angles = ringAngles(rings, step, slot);
+    boxes = angles === null ? [] : ringBoxes(rings, angles, step);
+    if (angles !== null && !hasOverlap(boxes, gap / 2)) {
+      break;
+    }
     step *= RING_STEP_GROWTH;
-    boxes = ringBoxes(slots, step);
   }
   const minLeft = Math.min(...boxes.map((box) => box.left));
   const minTop = Math.min(...boxes.map((box) => box.top));

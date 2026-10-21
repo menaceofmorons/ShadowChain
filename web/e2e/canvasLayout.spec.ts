@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test';
 import type { CanvasHostState } from './host/canvas';
 import { LAYOUT_MODES } from '../src/map/layout/types';
+import { buildChainTree } from '../src/map/model/chainTree';
+import type { ChainNode } from '../src/map/model/types';
+import { generateChain, SYNTHETIC_ROOT_SYSTEM_ID } from '../src/map/synthetic';
 
 const NODE_COUNT = 150;
 
@@ -43,6 +46,64 @@ const overlappingPairs = (boxes: readonly DrawnBox[]): string[] => {
   });
   return pairs;
 };
+
+interface Centre {
+  id: string;
+  x: number;
+  y: number;
+}
+
+const readScreenCentres = (): Centre[] =>
+  [...document.querySelectorAll<HTMLElement>('.react-flow__node')].map((element) => {
+    const rect = element.getBoundingClientRect();
+    return { id: element.dataset.id ?? '', x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+  });
+
+const depthsOf = (nodeCount: number): Map<string, number> => {
+  const depths = new Map<string, number>();
+  const walk = (node: ChainNode, depth: number): void => {
+    depths.set(node.keyString, depth);
+    node.children.forEach((child) => {
+      walk(child, depth + 1);
+    });
+  };
+  walk(buildChainTree(generateChain({ nodeCount, seed: 7 }), SYNTHETIC_ROOT_SYSTEM_ID).root, 0);
+  return depths;
+};
+
+test.describe('radial rings as drawn on screen', () => {
+  test('every node of a level is the same distance from the root and the first ring is evenly spread', async ({
+    page,
+  }) => {
+    await page.goto(`/e2e/host/canvas.html?mode=radial&size=${String(NODE_COUNT)}&seed=7`);
+    await page.waitForFunction(() => (window as unknown as { __canvas: CanvasHostState }).__canvas.done);
+    const centres = await page.evaluate(readScreenCentres);
+    const depths = depthsOf(NODE_COUNT);
+    const root = centres.find((centre) => depths.get(centre.id) === 0) as Centre;
+    const radiiByDepth = new Map<number, number[]>();
+    for (const centre of centres) {
+      const depth = depths.get(centre.id) as number;
+      radiiByDepth.set(depth, [...(radiiByDepth.get(depth) ?? []), Math.hypot(centre.x - root.x, centre.y - root.y)]);
+    }
+    const step = (radiiByDepth.get(1) as number[])[0] as number;
+    expect(step).toBeGreaterThan(0);
+    for (const [depth, radii] of radiiByDepth) {
+      const expected = depth * step;
+      expect(
+        Math.max(...radii.map((radius) => Math.abs(radius - expected))) / step,
+        `ring ${String(depth)}`,
+      ).toBeLessThan(0.01);
+    }
+    const firstRing = centres
+      .filter((centre) => depths.get(centre.id) === 1)
+      .map((centre) => Math.atan2(centre.y - root.y, centre.x - root.x))
+      .sort((a, b) => a - b);
+    firstRing.forEach((turn, index) => {
+      const previous = index === 0 ? (firstRing.at(-1) as number) - 2 * Math.PI : (firstRing[index - 1] as number);
+      expect(turn - previous).toBeCloseTo((2 * Math.PI) / firstRing.length, 1);
+    });
+  });
+});
 
 test.describe('150-node chain on the canvas through the map entry point', () => {
   for (const mode of LAYOUT_MODES) {
