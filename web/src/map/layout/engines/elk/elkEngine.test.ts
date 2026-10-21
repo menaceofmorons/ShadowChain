@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { assertWithinTimeBudget, runHarness } from '../../../harness';
 import { buildChainTree } from '../../../model/chainTree';
-import type { ChainTree } from '../../../model/types';
+import type { ChainNode, ChainTree } from '../../../model/types';
 import {
   applyChurn,
   generateChain,
@@ -151,17 +151,38 @@ describe('elk engine mode shapes', () => {
     expect(span(right, 'x')).toBeGreaterThan(0);
   });
 
-  it.each(SYNTHETIC_NODE_COUNTS)('radial root is the node closest to the layout centre at %i nodes', async (count) => {
-    const tree = treeOf(count);
-    const placed = await engine.layout(full(tree, 'radial'));
-    const centres = placed.map((n) => ({ key: n.nodeKey, ...centre(n) }));
-    const cx = (Math.min(...centres.map((c) => c.x)) + Math.max(...centres.map((c) => c.x))) / 2;
-    const cy = (Math.min(...centres.map((c) => c.y)) + Math.max(...centres.map((c) => c.y))) / 2;
-    const closest = centres.reduce((best, c) =>
-      Math.hypot(c.x - cx, c.y - cy) < Math.hypot(best.x - cx, best.y - cy) ? c : best,
-    );
-    expect(closest.key).toBe(tree.root.keyString);
-  });
+  it.each(SYNTHETIC_NODE_COUNTS)(
+    'radial puts every level on its own ring around the root at %i nodes',
+    async (count) => {
+      const tree = treeOf(count);
+      const depths = new Map<string, number>();
+      const walk = (node: ChainNode, depth: number): void => {
+        depths.set(node.keyString, depth);
+        node.children.forEach((child) => {
+          walk(child, depth + 1);
+        });
+      };
+      walk(tree.root, 0);
+      const placed = await engine.layout(full(tree, 'radial'));
+      const rootCentre = centre(placed.find((n) => n.nodeKey === tree.root.keyString) as PlacedNode);
+      const ringByDepth = new Map<number, number[]>();
+      for (const node of placed) {
+        const { x, y } = centre(node);
+        const depth = depths.get(node.nodeKey) as number;
+        ringByDepth.set(depth, [...(ringByDepth.get(depth) ?? []), Math.hypot(x - rootCentre.x, y - rootCentre.y)]);
+      }
+      const rings = [...ringByDepth.entries()].sort(([a], [b]) => a - b).map(([, radii]) => radii);
+      expect(rings.length).toBeGreaterThan(2);
+      rings.forEach((radii, index) => {
+        expect(Math.max(...radii) - Math.min(...radii), `ring ${String(index)} spread`).toBeLessThan(1);
+        if (index > 0) {
+          expect(Math.min(...radii), `ring ${String(index)} outside ring ${String(index - 1)}`).toBeGreaterThan(
+            Math.max(...(rings[index - 1] as number[])),
+          );
+        }
+      });
+    },
+  );
 });
 
 describe('elk engine through the worker host', () => {

@@ -1,6 +1,8 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_ENGINE_OPTIONS } from '../layout/engineOptions';
+import type { LayoutMode } from '../layout/types';
 import { ReactFlowCanvas, movedNodes, type CanvasEdge, type CanvasNode } from './index';
 
 let root: Root | null = null;
@@ -13,14 +15,21 @@ afterEach(() => {
   container = null;
 });
 
-async function render(nodes: CanvasNode[], edges: CanvasEdge[], onNodeSelect = vi.fn()): Promise<void> {
+async function render(
+  nodes: CanvasNode[],
+  edges: CanvasEdge[],
+  onNodeSelect = vi.fn(),
+  mode?: LayoutMode,
+): Promise<void> {
   container = document.createElement('div');
   container.style.width = '800px';
   container.style.height = '600px';
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
-    root?.render(<ReactFlowCanvas nodes={nodes} edges={edges} onNodeSelect={onNodeSelect} onNodesMoved={vi.fn()} />);
+    root?.render(
+      <ReactFlowCanvas nodes={nodes} edges={edges} mode={mode} onNodeSelect={onNodeSelect} onNodesMoved={vi.fn()} />,
+    );
   });
 }
 
@@ -46,6 +55,35 @@ describe('ReactFlowCanvas', () => {
     await render(nodes, edges);
     expect(container?.querySelectorAll('.react-flow__node')).toHaveLength(5);
     expect(container?.querySelectorAll('.react-flow__edge')).toHaveLength(4);
+  });
+
+  it('draws system and alias boxes at the sizes the layout engines use', async () => {
+    const { nodes, edges } = makeGraph(2);
+    await render(nodes, edges);
+    const box = (key: string) => container?.querySelector<HTMLElement>(`.react-flow__node[data-id="${key}"] > div`);
+    expect(box('s:0')?.style.width).toBe(`${String(DEFAULT_ENGINE_OPTIONS.nodeWidth)}px`);
+    expect(box('s:0')?.style.height).toBe(`${String(DEFAULT_ENGINE_OPTIONS.nodeHeight)}px`);
+    expect(box('s:1')?.style.width).toBe(`${String(DEFAULT_ENGINE_OPTIONS.aliasWidth)}px`);
+    expect(box('s:1')?.style.height).toBe(`${String(DEFAULT_ENGINE_OPTIONS.aliasHeight)}px`);
+  });
+
+  it.each([
+    ['top-down', 'react-flow__handle-bottom', 'react-flow__handle-top'],
+    ['left-to-right', 'react-flow__handle-right', 'react-flow__handle-left'],
+  ] as const)('leaves a parent and enters a child on the %s sides', async (mode, sourceClass, targetClass) => {
+    const { nodes, edges } = makeGraph(3);
+    await render(nodes, edges, vi.fn(), mode);
+    const sources = [...(container?.querySelectorAll('.react-flow__handle.source') ?? [])];
+    const targets = [...(container?.querySelectorAll('.react-flow__handle.target') ?? [])];
+    expect(sources).toHaveLength(3);
+    expect(sources.every((handle) => handle.classList.contains(sourceClass))).toBe(true);
+    expect(targets.every((handle) => handle.classList.contains(targetClass))).toBe(true);
+  });
+
+  it('draws radial connectors as straight lines', async () => {
+    const { nodes, edges } = makeGraph(3);
+    await render(nodes, edges, vi.fn(), 'radial');
+    expect(container?.querySelectorAll('.react-flow__edge-straight')).toHaveLength(2);
   });
 
   it('renders nodes beyond the viewport', async () => {

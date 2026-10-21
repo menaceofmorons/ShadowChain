@@ -135,6 +135,7 @@ function Host() {
           <ReactFlowCanvas
             nodes={scene?.nodes ?? []}
             edges={scene?.edges ?? []}
+            mode={mode}
             onNodeSelect={() => undefined}
             onNodesMoved={() => undefined}
           />
