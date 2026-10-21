@@ -53,6 +53,8 @@ metadata:
 - elkjs: import `elkjs/lib/elk.bundled.js` (default) and types from `elkjs/lib/elk-api`; `web/node_modules` is denied to file tools (WS-1.2)
 - elk `radial` overlaps nodes; follow with a `sporeOverlap` pass. mrtree/radial have no interactive mode, so elk incremental is a full re-layout (WS-1.2)
 - elk radial + `sporeOverlap` can take ~20x longer on specific trees (e.g. 14 s at 500 nodes, seed 7/churn 8/step 16); bake-off runs use a 60 s adapter timeout (WS-1.2)
+- Radial now uses elk only for child order; per-level ring radii are computed in `elkEngine.ts` (`sporeOverlap` removed). Rings can be exact while the look still fails: judge radial visually, with the true root marked (WS-1.2)
+- The placeholder canvas must draw boxes at the engine's nominal sizes and choose handle sides by layout mode, or overlaps and wrong edge sides appear (WS-1.2)
 - React Flow fit-to-view on a 150-node chain needs `minZoom` lowered below 0.5 (`useStoreApi().getState().setMinZoom`) (WS-1.2)
 - Importing `web/src/map/index.ts` statically pulls elkjs into the bundle via the bake-off and engine exports; the registry itself loads engines lazily (WS-1.2)
 - `elk.bundled.js` fails inside a real Web Worker without a `document` global (`_Worker is not a constructor`); `engines/elk/documentShim.ts` is imported first in `elkWorker.ts`; Vitest jsdom hides this (WS-1.2)
