@@ -1,21 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import * as mapEntry from './index';
+import { BAKEOFF_CANDIDATES } from './bakeoff/candidates';
 import {
-  BAKEOFF_CANDIDATES,
   buildChainTree,
-  createElkEngine,
   createLayoutAdapter,
   createMemoryChannel,
   createRoutedEngine,
-  createTidyTreeEngine,
   createWorkerHost,
+  DEFAULT_ENGINE_OPTIONS,
   DEFAULT_ENGINE_REGISTRY,
   engineEntryForMode,
   generateChain,
   generateChurnScript,
   LAYOUT_MODES,
   measureStability,
-  nodesOverlap,
   registeredEngineIds,
   runHarness,
   SYNTHETIC_ROOT_SYSTEM_ID,
@@ -41,13 +39,20 @@ function viaWorkerBoundary(engine: LayoutEngine): LayoutEngine {
 const fullLayout = async (engine: LayoutEngine, mode: LayoutMode): Promise<readonly PlacedNode[]> =>
   engine.layout({ type: 'full', tree, mode, manualPositions: [] });
 
+const sizeOf = (node: PlacedNode) =>
+  node.alias
+    ? { w: DEFAULT_ENGINE_OPTIONS.aliasWidth, h: DEFAULT_ENGINE_OPTIONS.aliasHeight }
+    : { w: DEFAULT_ENGINE_OPTIONS.nodeWidth, h: DEFAULT_ENGINE_OPTIONS.nodeHeight };
+
 function countOverlaps(placed: readonly PlacedNode[]): number {
   let overlaps = 0;
   for (let i = 0; i < placed.length; i += 1) {
     for (let j = i + 1; j < placed.length; j += 1) {
-      const a = placed[i];
-      const b = placed[j];
-      if (a !== undefined && b !== undefined && !a.alias && !b.alias && nodesOverlap(a, b)) {
+      const a = placed[i] as PlacedNode;
+      const b = placed[j] as PlacedNode;
+      const sa = sizeOf(a);
+      const sb = sizeOf(b);
+      if (a.x < b.x + sb.w && b.x < a.x + sa.w && a.y < b.y + sb.h && b.y < a.y + sa.h) {
         overlaps += 1;
       }
     }
@@ -66,9 +71,6 @@ describe('map entry point exposes what WS-1.3 consumes', () => {
       'registeredEngineIds',
       'createRoutedEngine',
       'createRegistryAdapter',
-      'createTidyTreeEngine',
-      'createElkEngine',
-      'BAKEOFF_CANDIDATES',
       'measureStability',
       'measureWanderer553',
       'runStability',
@@ -78,9 +80,16 @@ describe('map entry point exposes what WS-1.3 consumes', () => {
     }
   });
 
-  it('keeps test-only engines and the test stub out', () => {
+  it('keeps engine factories, bake-off candidates, test-only engines and the test stub off the entry', () => {
     const names = Object.keys(mapEntry);
-    for (const hidden of ['createShiftingEngine', 'createDelayedEngine', 'createStubEngine']) {
+    for (const hidden of [
+      'createTidyTreeEngine',
+      'createElkEngine',
+      'BAKEOFF_CANDIDATES',
+      'createShiftingEngine',
+      'createDelayedEngine',
+      'createStubEngine',
+    ]) {
       expect(names).not.toContain(hidden);
     }
   });
@@ -122,8 +131,6 @@ describe('150-node chain through the entry point, registry and worker boundary',
 
   it('uses the same engines the bake-off measured', async () => {
     expect(BAKEOFF_CANDIDATES.map((candidate) => candidate.name)).toEqual(['tidy-tree', 'elkjs']);
-    expect(createTidyTreeEngine()).toBeDefined();
-    expect(createElkEngine()).toBeDefined();
     const [tidy] = BAKEOFF_CANDIDATES;
     expect(tidy).toBeDefined();
     if (tidy !== undefined) {
