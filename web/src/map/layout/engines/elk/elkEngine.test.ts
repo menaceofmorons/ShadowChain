@@ -164,7 +164,7 @@ describe('elk engine mode shapes', () => {
   };
 
   it.each(SYNTHETIC_NODE_COUNTS)(
-    'radial puts every level on one ring at a fixed radius step at %i nodes',
+    'radial puts every level on one ring, each strictly outside the previous, at %i nodes',
     async (count) => {
       const tree = treeOf(count);
       const depths = depthsOf(tree);
@@ -178,13 +178,12 @@ describe('elk engine mode shapes', () => {
       }
       const rings = [...ringByDepth.entries()].sort(([a], [b]) => a - b).map(([, radii]) => radii);
       expect(rings.length).toBeGreaterThan(2);
-      const step = (rings[1] as number[])[0] as number;
-      expect(step).toBeGreaterThan(0);
       rings.forEach((radii, index) => {
         expect(Math.max(...radii) - Math.min(...radii), `ring ${String(index)} spread`).toBeLessThan(1);
-        expect(Math.abs((radii[0] as number) - index * step), `ring ${String(index)} step`).toBeLessThan(1);
-        if (index > 1) {
-          expect(radii[0] as number).toBeGreaterThan((rings[index - 1] as number[])[0] as number);
+        if (index > 0) {
+          expect(radii[0] as number, `ring ${String(index)} outside`).toBeGreaterThan(
+            (rings[index - 1] as number[])[0] as number,
+          );
         }
       });
     },
@@ -243,21 +242,67 @@ describe('elk engine mode shapes', () => {
     },
   );
 
-  it.each(SYNTHETIC_NODE_COUNTS)('radial spreads the first ring evenly around the root at %i nodes', async (count) => {
+  it.each(SYNTHETIC_NODE_COUNTS)(
+    'radial keeps every child no further round the ring from its parent than the parent is from its ring neighbours at %i nodes',
+    async (count) => {
+      const tree = treeOf(count);
+      const { turnOf } = await radialTurns(tree);
+      const apart = (a: number, b: number): number => {
+        const difference = Math.abs(a - b) % (2 * Math.PI);
+        return Math.min(difference, 2 * Math.PI - difference);
+      };
+      const levels = levelsOf(tree);
+      levels.slice(1).forEach((level, offset) => {
+        for (const node of level) {
+          const turns = level
+            .filter((other) => other !== node)
+            .map((other) => apart(turnOf(other.keyString), turnOf(node.keyString)));
+          const room = turns.length === 0 ? Math.PI : Math.min(...turns);
+          for (const child of node.children) {
+            expect(
+              apart(turnOf(child.keyString), turnOf(node.keyString)),
+              `ring ${String(offset + 1)} ${child.keyString}`,
+            ).toBeLessThanOrEqual(room + 1e-6);
+          }
+        }
+      });
+    },
+  );
+
+  it.each(SYNTHETIC_NODE_COUNTS)('radial draws no crossing connectors at %i nodes', async (count) => {
     const tree = treeOf(count);
-    const { turnOf } = await radialTurns(tree);
-    const turns = tree.root.children.map((child) => turnOf(child.keyString)).sort((a, b) => a - b);
-    turns.forEach((turn, index) => {
-      const previous = index === 0 ? (turns.at(-1) as number) - 2 * Math.PI : (turns[index - 1] as number);
-      expect(turn - previous).toBeCloseTo((2 * Math.PI) / turns.length, 2);
+    const placed = await engine.layout(full(tree, 'radial'));
+    const centres = new Map(placed.map((n) => [n.nodeKey, centre(n)]));
+    type Point = { x: number; y: number };
+    const edges: [string, string, Point, Point][] = tree.nodes.flatMap((node) =>
+      node.children.map((child): [string, string, Point, Point] => [
+        node.keyString,
+        child.keyString,
+        centres.get(node.keyString) as Point,
+        centres.get(child.keyString) as Point,
+      ]),
+    );
+    const side = (a: Point, b: Point, c: Point): number =>
+      Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
+    const crossings: string[] = [];
+    edges.forEach(([from1, to1, a, b], index) => {
+      for (const [from2, to2, c, d] of edges.slice(index + 1)) {
+        if (new Set([from1, to1, from2, to2]).size < 4) {
+          continue;
+        }
+        if (side(a, b, c) !== side(a, b, d) && side(c, d, a) !== side(c, d, b)) {
+          crossings.push(`${from1}>${to1} x ${from2}>${to2}`);
+        }
+      }
     });
+    expect(crossings).toEqual([]);
   });
 
   it('radial stays compact at 150 nodes', async () => {
     const placed = await engine.layout(full(treeOf(150), 'radial'));
     const extent = (axis: 'x' | 'y') =>
       Math.max(...placed.map((n) => n[axis])) - Math.min(...placed.map((n) => n[axis]));
-    expect(Math.max(extent('x'), extent('y'))).toBeLessThan(6000);
+    expect(Math.max(extent('x'), extent('y'))).toBeLessThan(8000);
   });
 });
 

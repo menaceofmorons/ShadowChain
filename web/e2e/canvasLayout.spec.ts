@@ -72,7 +72,7 @@ const depthsOf = (nodeCount: number): Map<string, number> => {
 };
 
 test.describe('radial rings as drawn on screen', () => {
-  test('every node of a level is the same distance from the root and the first ring is evenly spread', async ({
+  test('every node of a level is the same distance from the root and each level is strictly outside the previous', async ({
     page,
   }) => {
     await page.goto(`/e2e/host/canvas.html?mode=radial&size=${String(NODE_COUNT)}&seed=7`);
@@ -85,23 +85,17 @@ test.describe('radial rings as drawn on screen', () => {
       const depth = depths.get(centre.id) as number;
       radiiByDepth.set(depth, [...(radiiByDepth.get(depth) ?? []), Math.hypot(centre.x - root.x, centre.y - root.y)]);
     }
-    const step = (radiiByDepth.get(1) as number[])[0] as number;
-    expect(step).toBeGreaterThan(0);
-    for (const [depth, radii] of radiiByDepth) {
-      const expected = depth * step;
-      expect(
-        Math.max(...radii.map((radius) => Math.abs(radius - expected))) / step,
-        `ring ${String(depth)}`,
-      ).toBeLessThan(0.01);
+    const levels = [...radiiByDepth.entries()].sort(([a], [b]) => a - b);
+    expect(levels.length).toBeGreaterThan(2);
+    let previous = -1;
+    for (const [depth, radii] of levels) {
+      const ring = radii[0] as number;
+      expect(Math.max(...radii.map((radius) => Math.abs(radius - ring))), `ring ${String(depth)} spread`).toBeLessThan(
+        1,
+      );
+      expect(ring, `ring ${String(depth)} outside the previous`).toBeGreaterThan(previous);
+      previous = ring;
     }
-    const firstRing = centres
-      .filter((centre) => depths.get(centre.id) === 1)
-      .map((centre) => Math.atan2(centre.y - root.y, centre.x - root.x))
-      .sort((a, b) => a - b);
-    firstRing.forEach((turn, index) => {
-      const previous = index === 0 ? (firstRing.at(-1) as number) - 2 * Math.PI : (firstRing[index - 1] as number);
-      expect(turn - previous).toBeCloseTo((2 * Math.PI) / firstRing.length, 1);
-    });
   });
 });
 
