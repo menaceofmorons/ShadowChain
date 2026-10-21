@@ -41,7 +41,7 @@ const overlappingPairs = (nodes: readonly PlacedNode[]): string[] => {
   return found;
 };
 
-const withMode =(mode: LayoutMode, entry: EngineEntry): EngineRegistry => ({
+const withMode = (mode: LayoutMode, entry: EngineEntry): EngineRegistry => ({
   ...DEFAULT_ENGINE_REGISTRY,
   [mode]: entry,
 });
