@@ -17,6 +17,7 @@ import type { HostResult, HostState } from './host/host';
 const WARMUP_FULL_RUNS = 3;
 const FULL_RUNS = 10;
 const CHURN_STEPS = 80;
+const BAKEOFF_TIMEOUT_MS = 60_000;
 const SPEED_SEED = 7;
 
 async function runHost(page: Page, query: string): Promise<HostResult> {
@@ -44,7 +45,7 @@ async function measureSpeed(browser: Browser): Promise<readonly SpeedRow[]> {
       for (const size of SPEED_SIZES) {
         const context = await browser.newContext();
         const page = await context.newPage();
-        const query = `engine=${candidate.name}&mode=${mode}&size=${String(size)}&seed=${String(SPEED_SEED)}&churn=${String(CHURN_STEPS)}&repeats=${String(FULL_RUNS)}&warmup=${String(WARMUP_FULL_RUNS)}`;
+        const query = `engine=${candidate.name}&mode=${mode}&size=${String(size)}&seed=${String(SPEED_SEED)}&churn=${String(CHURN_STEPS)}&repeats=${String(FULL_RUNS)}&warmup=${String(WARMUP_FULL_RUNS)}&timeoutMs=${String(BAKEOFF_TIMEOUT_MS)}`;
         const { report } = await runHost(page, query);
         rows.push({
           candidate: candidate.name,
