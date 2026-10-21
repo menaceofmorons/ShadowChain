@@ -9,6 +9,8 @@ const RANDOM_SEED = '1';
 const RADIAL_COMPACTION_STEP = '8';
 const RING_STEP_GROWTH = 1.03;
 const MAX_RING_STEP_ATTEMPTS = 200;
+const MAX_WIDENINGS = 20000;
+const WIDEN_FRACTION = 0.1;
 const FULL_TURN = 2 * Math.PI;
 
 // TUNE: initial radial radius per sqrt(node count) handed to elkjs, which only supplies child order.
@@ -70,11 +72,11 @@ interface Point {
   readonly y: number;
 }
 
-interface Ring {
-  readonly ids: string[];
-  readonly widths: number[];
-  readonly heights: number[];
-  readonly parents: number[];
+interface Slot {
+  readonly id: string;
+  readonly width: number;
+  readonly height: number;
+  readonly angle: number;
 }
 
 interface Box {
@@ -95,7 +97,7 @@ const wrapAngle = (angle: number): number => {
   return turned <= -Math.PI ? turned + FULL_TURN : turned;
 };
 
-function buildRings(root: ChainNode, arranged: ElkNode, options: EngineOptions): Ring[] {
+function orderChildren(root: ChainNode, arranged: ElkNode): Map<string, ChainNode[]> {
   const elkCentres = new Map<string, Point>();
   for (const { id, x = 0, y = 0, width = 0, height = 0 } of arranged.children ?? []) {
     elkCentres.set(id, { x: x + width / 2, y: y + height / 2 });
@@ -105,82 +107,135 @@ function buildRings(root: ChainNode, arranged: ElkNode, options: EngineOptions):
     const centre = elkCentres.get(node.keyString) ?? origin;
     return Math.atan2(centre.y - origin.y, centre.x - origin.x);
   };
-  const rings: Ring[] = [];
-  const visit = (node: ChainNode, depth: number, parent: number): void => {
+  const ordered = new Map<string, ChainNode[]>();
+  const visit = (node: ChainNode, depth: number): void => {
+    const turn = (child: ChainNode): number =>
+      wrapAngle(elkAngle(child) - elkAngle(node)) + (depth === 0 ? FULL_TURN : 0);
+    const children = [...node.children].sort((a, b) => turn(a) - turn(b) || a.keyString.localeCompare(b.keyString));
+    ordered.set(node.keyString, children);
+    children.forEach((child) => {
+      visit(child, depth + 1);
+    });
+  };
+  visit(root, 0);
+  return ordered;
+}
+
+const minTurn = (radius: number, slot: number): number => 2 * Math.asin(Math.min(1, slot / (2 * radius)));
+
+function angleNeeds(
+  root: ChainNode,
+  ordered: ReadonlyMap<string, ChainNode[]>,
+  radii: readonly number[],
+  slot: number,
+) {
+  const needs = new Map<string, number>();
+  const visit = (node: ChainNode, depth: number): number => {
+    const below = (ordered.get(node.keyString) ?? []).reduce((sum, child) => sum + visit(child, depth + 1), 0);
+    const need = Math.max(below, depth === 0 ? 0 : minTurn(radii[depth] as number, slot));
+    needs.set(node.keyString, need);
+    return need;
+  };
+  visit(root, 0);
+  return needs;
+}
+
+function levelShares(
+  root: ChainNode,
+  ordered: ReadonlyMap<string, ChainNode[]>,
+  needs: ReadonlyMap<string, number>,
+  levelTotal: number,
+  slot: number,
+  radii: readonly number[],
+): number[] {
+  const shares = Array.from({ length: levelTotal }, () => 0);
+  const visit = (node: ChainNode, depth: number): void => {
+    const children = ordered.get(node.keyString) ?? [];
+    const below = children.reduce((sum, child) => sum + (needs.get(child.keyString) as number), 0);
+    if (depth > 0 && (children.length === 0 || minTurn(radii[depth] as number, slot) >= below)) {
+      shares[depth] = (shares[depth] as number) + (needs.get(node.keyString) as number);
+      return;
+    }
+    children.forEach((child) => {
+      visit(child, depth + 1);
+    });
+  };
+  visit(root, 0);
+  return shares;
+}
+
+const cumulative = (steps: readonly number[]): number[] => {
+  let radius = 0;
+  return steps.map((step) => (radius += step));
+};
+
+function levelRadii(
+  root: ChainNode,
+  ordered: ReadonlyMap<string, ChainNode[]>,
+  levelCounts: readonly number[],
+  minStep: number,
+  slot: number,
+): number[] {
+  const steps = levelCounts.map((_, depth) => (depth === 0 ? 0 : minStep));
+  let radii = cumulative(steps);
+  for (let attempt = 0; attempt < MAX_WIDENINGS; attempt += 1) {
+    const needs = angleNeeds(root, ordered, radii, slot);
+    if ((needs.get(root.keyString) as number) <= FULL_TURN) {
+      break;
+    }
+    const shares = levelShares(root, ordered, needs, radii.length, slot, radii);
+    let best = 1;
+    let bestGain = -1;
+    for (let depth = radii.length - 1; depth >= 1; depth -= 1) {
+      const gain = shares[depth] as number;
+      if (gain > bestGain) {
+        bestGain = gain;
+        best = depth;
+      }
+    }
+    steps[best] = (steps[best] as number) + Math.max(minStep * WIDEN_FRACTION, (radii.at(-1) as number) * 0.005);
+    radii = cumulative(steps);
+  }
+  return radii;
+}
+
+function wedgeSlots(
+  root: ChainNode,
+  ordered: ReadonlyMap<string, ChainNode[]>,
+  needs: ReadonlyMap<string, number>,
+  options: EngineOptions,
+): Slot[][] {
+  const levels: Slot[][] = [];
+  const visit = (node: ChainNode, depth: number, start: number, end: number): void => {
     const alias = node.kind === 'alias';
-    const ring = (rings[depth] ??= { ids: [], widths: [], heights: [], parents: [] });
-    const index = ring.ids.length;
-    ring.ids.push(node.keyString);
-    ring.widths.push(alias ? options.aliasWidth : options.nodeWidth);
-    ring.heights.push(alias ? options.aliasHeight : options.nodeHeight);
-    ring.parents.push(parent);
-    const ordered = node.children
-      .map((child) => ({ child, sweep: wrapAngle(elkAngle(child) - elkAngle(node)) + (depth === 0 ? FULL_TURN : 0) }))
-      .sort((a, b) => a.sweep - b.sweep || a.child.keyString.localeCompare(b.child.keyString));
-    for (const { child } of ordered) {
-      visit(child, depth + 1, index);
+    (levels[depth] ??= []).push({
+      id: node.keyString,
+      width: alias ? options.aliasWidth : options.nodeWidth,
+      height: alias ? options.aliasHeight : options.nodeHeight,
+      angle: depth === 0 ? 0 : (start + end) / 2,
+    });
+    const children = ordered.get(node.keyString) ?? [];
+    const total = children.reduce((sum, child) => sum + (needs.get(child.keyString) as number), 0);
+    let cursor = start;
+    for (const child of children) {
+      const share = ((end - start) * (needs.get(child.keyString) as number)) / total;
+      visit(child, depth + 1, cursor, cursor + share);
+      cursor += share;
     }
   };
-  visit(root, 0, -1);
-  return rings;
+  visit(root, 0, 0, FULL_TURN);
+  return levels;
 }
 
-function nonDecreasingFit(values: readonly number[]): number[] {
-  const blocks: { sum: number; count: number }[] = [];
-  for (const value of values) {
-    blocks.push({ sum: value, count: 1 });
-    while (blocks.length > 1) {
-      const last = blocks[blocks.length - 1] as { sum: number; count: number };
-      const before = blocks[blocks.length - 2] as { sum: number; count: number };
-      if (before.sum / before.count <= last.sum / last.count) {
-        break;
-      }
-      blocks.splice(blocks.length - 2, 2, { sum: before.sum + last.sum, count: before.count + last.count });
-    }
-  }
-  return blocks.flatMap(({ sum, count }) => Array.from({ length: count }, () => sum / count));
-}
-
-function spaceOnRing(targets: readonly number[], gap: number): number[] {
-  const count = targets.length;
-  const fitted = nonDecreasingFit(targets.map((target, index) => target - index * gap));
-  const lowest = gap / 2;
-  const highest = FULL_TURN - gap / 2 - (count - 1) * gap;
-  return fitted.map((value, index) => Math.min(Math.max(value, lowest), highest) + index * gap);
-}
-
-function ringAngles(rings: readonly Ring[], step: number, slot: number): number[][] | null {
-  const angles: number[][] = [[0]];
-  for (let depth = 1; depth < rings.length; depth += 1) {
-    const ring = rings[depth] as Ring;
-    const gap = 2 * Math.asin(Math.min(1, slot / (2 * depth * step)));
-    if (ring.ids.length * gap > FULL_TURN) {
-      return null;
-    }
-    const before = angles[depth - 1] as number[];
-    const targets =
-      depth === 1
-        ? ring.ids.map((_, index) => ((index + 0.5) * FULL_TURN) / ring.ids.length)
-        : ring.parents.map((parent) => before[parent] as number);
-    angles.push(spaceOnRing(targets, gap));
-  }
-  return angles;
-}
-
-function ringBoxes(rings: readonly Ring[], angles: readonly (readonly number[])[], step: number): Box[] {
-  return rings.flatMap((ring, depth) =>
-    ring.ids.map((id, index) => {
-      const width = ring.widths[index] as number;
-      const height = ring.heights[index] as number;
-      const angle = (angles[depth] as readonly number[])[index] as number;
-      return {
-        id,
-        left: depth * step * Math.cos(angle) - width / 2,
-        top: depth * step * Math.sin(angle) - height / 2,
-        width,
-        height,
-      };
-    }),
+function levelBoxes(levels: readonly (readonly Slot[])[], radii: readonly number[]): Box[] {
+  return levels.flatMap((level, depth) =>
+    level.map(({ id, width, height, angle }) => ({
+      id,
+      left: (radii[depth] as number) * Math.cos(angle) - width / 2,
+      top: (radii[depth] as number) * Math.sin(angle) - height / 2,
+      width,
+      height,
+    })),
   );
 }
 
@@ -202,26 +257,33 @@ function hasOverlap(boxes: readonly Box[], gap: number): boolean {
   return false;
 }
 
-function placeOnFixedRings(
+function placeOnLevelRings(
   root: ChainNode,
   arranged: ElkNode,
   options: EngineOptions,
 ): { id: string; x: number; y: number }[] {
-  const rings = buildRings(root, arranged, options);
+  const ordered = orderChildren(root, arranged);
   const gap = options.siblingSpacing / 2;
-  const slot = Math.hypot(options.nodeWidth + gap, options.nodeHeight + gap);
-  const crowding = Math.max(
-    ...rings.map((ring, depth) => (depth === 0 ? 0 : (ring.ids.length * slot) / (FULL_TURN * depth))),
-  );
-  let step = Math.max(options.nodeWidth + options.levelSpacing, crowding);
+  const slot = options.nodeWidth + gap;
+  const minStep = Math.max(options.nodeWidth + options.levelSpacing, slot);
+  const levelCounts: number[] = [];
+  const count = (node: ChainNode, depth: number): void => {
+    levelCounts[depth] = (levelCounts[depth] ?? 0) + 1;
+    (ordered.get(node.keyString) ?? []).forEach((child) => {
+      count(child, depth + 1);
+    });
+  };
+  count(root, 0);
+  let growth = 1;
   let boxes: Box[] = [];
   for (let attempt = 0; attempt < MAX_RING_STEP_ATTEMPTS; attempt += 1) {
-    const angles = ringAngles(rings, step, slot);
-    boxes = angles === null ? [] : ringBoxes(rings, angles, step);
-    if (angles !== null && !hasOverlap(boxes, gap / 2)) {
+    const radii = levelRadii(root, ordered, levelCounts, minStep * growth, slot * growth);
+    const needs = angleNeeds(root, ordered, radii, slot * growth);
+    boxes = levelBoxes(wedgeSlots(root, ordered, needs, options), radii);
+    if (!hasOverlap(boxes, gap / 2)) {
       break;
     }
-    step *= RING_STEP_GROWTH;
+    growth *= RING_STEP_GROWTH;
   }
   const minLeft = Math.min(...boxes.map((box) => box.left));
   const minTop = Math.min(...boxes.map((box) => box.top));
@@ -246,7 +308,7 @@ export function createElkEngine(overrides: Partial<EngineOptions> = {}): LayoutE
       const arranged = await elk.layout(toElkGraph(request, options, radius));
       const laidOut: ElkNode =
         request.mode === 'radial'
-          ? { ...arranged, children: placeOnFixedRings(request.tree.root, arranged, options) }
+          ? { ...arranged, children: placeOnLevelRings(request.tree.root, arranged, options) }
           : arranged;
       const aliasByKey = new Map(request.tree.nodes.map((node) => [node.keyString, node.kind === 'alias']));
       const placed = new Map<string, PlacedNode>();
