@@ -16,3 +16,4 @@ export * from './layout';
 export * from './canvas';
 export * from './harness';
 export * from './fixtures/wanderer';
+export * from './bakeoff';

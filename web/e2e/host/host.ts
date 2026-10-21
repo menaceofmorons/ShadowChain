@@ -74,9 +74,15 @@ const createWorker = (engineName: string): Worker => {
   return new Worker(new URL('./engineWorker.ts', import.meta.url), { type: 'module', name: engineName });
 };
 
-const createSingleWorkerAdapter = (engineName: string): { layout: LayoutAdapter['layout']; dispose: () => void } => {
+const createSingleWorkerAdapter = (
+  engineName: string,
+  timeoutMs: number | undefined,
+): { layout: LayoutAdapter['layout']; dispose: () => void } => {
   const worker = createWorker(engineName);
-  const adapter = createLayoutAdapter(endpointFromWorker<LayoutRequestMessage, LayoutResponseMessage>(worker));
+  const adapter = createLayoutAdapter(
+    endpointFromWorker<LayoutRequestMessage, LayoutResponseMessage>(worker),
+    timeoutMs === undefined ? undefined : { timeoutMs },
+  );
   return {
     layout: (request) => adapter.layout(request),
     dispose: () => {
@@ -94,7 +100,11 @@ async function run(): Promise<HostResult> {
   const fullRepeats = numberParam(params, 'repeats', 3);
 
   const warmupRepeats = numberParam(params, 'warmup', 0);
-  const adapter = engineName === 'registry' ? createRegistryAdapter() : createSingleWorkerAdapter(engineName);
+  const timeoutParam = params.get('timeoutMs');
+  const adapter =
+    engineName === 'registry'
+      ? createRegistryAdapter()
+      : createSingleWorkerAdapter(engineName, timeoutParam === null ? undefined : Number(timeoutParam));
 
   let finalPlaced: readonly PlacedNode[] = [];
   const engine: LayoutEngine = {
