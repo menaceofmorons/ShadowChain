@@ -1,3 +1,5 @@
+import type { LayoutMode } from '../layout/types';
+
 export interface CanvasNode {
   key: string;
   x: number;
@@ -20,6 +22,7 @@ export interface MovedNode {
 export interface CanvasAdapterProps {
   nodes: readonly CanvasNode[];
   edges: readonly CanvasEdge[];
+  mode?: LayoutMode;
   onNodeSelect: (key: string) => void;
   onNodesMoved: (moved: readonly MovedNode[]) => void;
 }

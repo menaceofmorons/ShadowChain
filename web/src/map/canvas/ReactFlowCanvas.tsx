@@ -1,47 +1,120 @@
 import { useMemo } from 'react';
-import { Position, ReactFlow, type Edge, type Node } from '@xyflow/react';
+import { Handle, Position, ReactFlow, type Edge, type Node, type NodeProps, type NodeTypes } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { DEFAULT_ENGINE_OPTIONS } from '../layout/engineOptions';
+import type { LayoutMode } from '../layout/types';
 import type { CanvasAdapterProps } from './canvasAdapter';
 
-const PLACEHOLDER_WIDTH = 150;
-const PLACEHOLDER_HEIGHT = 36;
+interface BoxData extends Record<string, unknown> {
+  label: string;
+  width: number;
+  height: number;
+  mode: LayoutMode;
+}
+
+type BoxNode = Node<BoxData, 'box'>;
+
+interface HandleSides {
+  readonly target: Position;
+  readonly source: Position;
+}
+
+const SIDES: Record<LayoutMode, HandleSides> = {
+  'top-down': { target: Position.Top, source: Position.Bottom },
+  'left-to-right': { target: Position.Left, source: Position.Right },
+  radial: { target: Position.Top, source: Position.Top },
+};
+
+const CENTRED = { top: '50%', left: '50%', opacity: 0 } as const;
+
+const handlePoint = (position: Position, width: number, height: number): { x: number; y: number } => {
+  switch (position) {
+    case Position.Top:
+      return { x: width / 2, y: 0 };
+    case Position.Bottom:
+      return { x: width / 2, y: height };
+    case Position.Left:
+      return { x: 0, y: height / 2 };
+    case Position.Right:
+      return { x: width, y: height / 2 };
+  }
+};
+
+function Box({ data }: NodeProps<BoxNode>) {
+  const sides = SIDES[data.mode];
+  const handleStyle = data.mode === 'radial' ? CENTRED : undefined;
+  return (
+    <div
+      style={{
+        width: data.width,
+        height: data.height,
+        boxSizing: 'border-box',
+        border: '1px solid #1a192b',
+        borderRadius: 3,
+        background: '#fff',
+        font: '12px sans-serif',
+        color: '#222',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <Handle type="target" position={sides.target} style={handleStyle} />
+      {data.label}
+      <Handle type="source" position={sides.source} style={handleStyle} />
+    </div>
+  );
+}
+
+const NODE_TYPES: NodeTypes = { box: Box };
 
 export function movedNodes(dragged: readonly Pick<Node, 'id' | 'position'>[]): { key: string; x: number; y: number }[] {
   return dragged.map((n) => ({ key: n.id, x: n.position.x, y: n.position.y }));
 }
 
-export function ReactFlowCanvas({ nodes, edges, onNodeSelect, onNodesMoved }: CanvasAdapterProps) {
-  const flowNodes = useMemo<Node[]>(
+export function ReactFlowCanvas({ nodes, edges, mode = 'top-down', onNodeSelect, onNodesMoved }: CanvasAdapterProps) {
+  const flowNodes = useMemo<BoxNode[]>(
     () =>
-      nodes.map((n) => ({
-        id: n.key,
-        position: { x: n.x, y: n.y },
-        data: { label: n.key, isAlias: n.isAlias },
-        initialWidth: PLACEHOLDER_WIDTH,
-        initialHeight: PLACEHOLDER_HEIGHT,
-        handles: [
-          { type: 'target', position: Position.Top, x: PLACEHOLDER_WIDTH / 2, y: 0, width: 1, height: 1 },
-          {
-            type: 'source',
-            position: Position.Bottom,
-            x: PLACEHOLDER_WIDTH / 2,
-            y: PLACEHOLDER_HEIGHT,
-            width: 1,
-            height: 1,
-          },
-        ],
-      })),
-    [nodes],
+      nodes.map((n) => {
+        const width = n.isAlias ? DEFAULT_ENGINE_OPTIONS.aliasWidth : DEFAULT_ENGINE_OPTIONS.nodeWidth;
+        const height = n.isAlias ? DEFAULT_ENGINE_OPTIONS.aliasHeight : DEFAULT_ENGINE_OPTIONS.nodeHeight;
+        const sides = SIDES[mode];
+        const centred = mode === 'radial';
+        const point = (position: Position) =>
+          centred ? { x: width / 2, y: height / 2 } : handlePoint(position, width, height);
+        return {
+          id: n.key,
+          type: 'box',
+          position: { x: n.x, y: n.y },
+          data: { label: n.key, width, height, mode },
+          initialWidth: width,
+          initialHeight: height,
+          handles: [
+            { type: 'target', position: sides.target, ...point(sides.target), width: 1, height: 1 },
+            { type: 'source', position: sides.source, ...point(sides.source), width: 1, height: 1 },
+          ],
+        };
+      }),
+    [nodes, mode],
   );
   const flowEdges = useMemo<Edge[]>(
-    () => edges.map((e) => ({ id: e.connectionId, source: e.sourceKey, target: e.targetKey })),
-    [edges],
+    () =>
+      edges.map((e) => ({
+        id: e.connectionId,
+        source: e.sourceKey,
+        target: e.targetKey,
+        type: mode === 'radial' ? 'straight' : 'default',
+      })),
+    [edges, mode],
   );
 
   return (
     <ReactFlow
       nodes={flowNodes}
       edges={flowEdges}
+      nodeTypes={NODE_TYPES}
       onlyRenderVisibleElements={false}
       onNodeClick={(_, node) => onNodeSelect(node.id)}
       onNodeDragStop={(_, _node, dragged) => onNodesMoved(movedNodes(dragged))}
