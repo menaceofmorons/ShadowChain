@@ -32,7 +32,6 @@
       "Read(**/Archive/**)",
       "Read(**/Executed/**)",
       "Read(**/Examples/**)",
-      "Read(**/_work/**)",
       "Read(**/.git/**)",
       "Read(**/node_modules/**)",
       "Read(**/target/**)",
@@ -47,6 +46,10 @@
       {
         "matcher": "Edit|Write|MultiEdit|NotebookEdit|Agent|Task|Read|Grep|Glob",
         "hooks": [
+          {
+            "type": "command",
+            "command": "py \"$CLAUDE_PROJECT_DIR/.claude/hooks/work_guard.py\""
+          },
           {
             "type": "command",
             "command": "py \"$CLAUDE_PROJECT_DIR/.claude/hooks/lead_guard.py\""

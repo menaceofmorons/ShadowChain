@@ -17,7 +17,7 @@ Never read, list or traverse these, at any depth. Exclude them inside every recu
 | `**/Archive/` | Retired documents |
 | `**/Executed/` | Completed guides and plans |
 | `**/Examples/` | Reference material, not project content |
-| `**/_work/` | Design working files |
+| `**/_work/` | Design working files (T-DD agents only; guarded by `work_guard.py`) |
 | `**/.git/` | Repository internals |
 | `**/node_modules/` | Installed dependencies |
 | `**/target/` | Rust build output (e.g. `src-tauri/target`) |
@@ -26,7 +26,7 @@ Never read, list or traverse these, at any depth. Exclude them inside every recu
 | `**/test-results/` | Playwright test output |
 | `**/playwright-report/` | Playwright HTML report |
 
-Target build output and generated folders, never source folders. The file-tool part of this list is mirrored as deny rules in `.claude/settings.json`; keep the two in step when you edit it.
+Target build output and generated folders, never source folders. The file-tool part of this list is mirrored as deny rules in `.claude/settings.json`, except `_work/`, which `.claude/hooks/work_guard.py` guards; keep them in step when you edit it.
 
 ### Documents and Paths
 - **Versions:** always use the highest non-DRAFT version of any document. A path given in a brief or protocol step is used exactly as given.
