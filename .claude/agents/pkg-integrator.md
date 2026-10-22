@@ -49,4 +49,4 @@ You execute either the terminal integration package for one work stream or a rel
 4. **Finish** per `package-rules`. The handover lists the conflicts and their resolutions.
 
 ## Fix briefs
-If the brief contains `Fix:`, address only the stated issue (for a card, write the next card version per `dev-testing`), then finish per `package-rules`.
+If the brief contains `Fix:`, address only the stated issue (for a card, write the next card version per `dev-testing`; if it also has `Analysis:`, read that file first), then finish per `package-rules`.

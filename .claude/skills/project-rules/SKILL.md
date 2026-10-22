@@ -1,6 +1,6 @@
 ---
 name: project-rules
-description: Project-wide rules for every session and agent - excluded directories, document versions, path format, working rules (design authority, path discipline, scope, locks, worktree removal, Markdown, Execution Config rows, process feedback), protocol triggers, code comments. Preloaded into all agents; imported by CLAUDE.md; read first by CoWork.
+description: Project-wide rules for every session and agent - excluded directories, document versions, path format, working rules (design authority, path discipline, scope, answers, locks, worktree removal, Markdown, Execution Config rows, process feedback), protocol triggers, code comments. Preloaded into all agents; imported by CLAUDE.md; read first by CoWork.
 user-invocable: false
 metadata:
   source: project-rules template v5.0
@@ -36,8 +36,9 @@ Target build output and generated folders, never source folders. The file-tool p
 - **Design authority:** the approved dense design (`#DSD`) governs every plan, decision and change. On conflict, the design wins. Never plan, make or approve anything that contradicts it or adds architecture it does not define; if work seems to need that, stop and escalate (agents: `BLOCKED`; sessions: ask the Developer). The design changes only through `#T-DU`. How to read it: `#DDU` (agents: `dense-design`).
 - **Path discipline:** access only paths named by your session instructions, `#NP`, the active protocol or brief, or the Developer. No orientation scans.
 - **Scope:** change only what the active plan, brief or Developer scopes; leave all other behaviour untouched.
+- **Answers:** answer only what was asked, as briefly as the question allows. A yes/no question gets "Yes." or "No." plus at most one sentence; a choice gets the recommendation and the options in one or two lines. Give detail only when the Developer asks.
 - **Locks:** on a read/write lock failure, retry once, then stop and report.
-- **Worktrees:** remove a worktree only with `py tools/worktree_clean.py remove [--force] {path}` (Team Lead and Developer only), and clear leftovers with `py tools/worktree_clean.py sweep`. Never use bare `git worktree remove`: OneDrive marks folders read-only, which Windows won't delete, and the tool clears that first. If it still fails, report its output.
+- **Worktrees:** remove a worktree only with `py tools/worktree_clean.py remove [--force] [--unlock] {path}` (Team Lead and Developer only), and clear leftovers with `py tools/worktree_clean.py sweep`. If `remove` or `sweep` reports a lock on a returned agent's worktree, add `--unlock` to `remove`. Never use bare `git worktree remove`: OneDrive marks folders read-only, which Windows won't delete, and the tool clears that first. If it still fails, report its output.
 - **Execution Config rows:** a row in `.claude/execution-config.md` whose `Requires` file does not exist in your working directory does not apply. Skip it and report it as `N/A ({path} absent)`, never as a pass or a fail. Never create a `Requires` file unless your scope delivers it.
 - **Markdown:** write each paragraph as one unwrapped line.
 - **Process feedback:** a gap in the framework (a protocol, template, rule, hook or tool) is logged in `#FBK` only after the Developer has discussed it with you: state what happened and the proposed change, and write the entry once they agree. The Developer may also ask for any entry, noticed or not. The first entry creates the file from `#TPL/Process-Feedback-Template-vX.X.md`. Only append entries; never edit an existing one (the process Architect changes statuses), and never edit framework files. Package agents never write `#FBK`: they note a gap in their handover's Spillover as `Process: …` for the lead to raise.

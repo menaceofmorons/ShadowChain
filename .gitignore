@@ -6,6 +6,10 @@
 # Personal settings
 .claude/settings.local.json
 
+# Dependencies and test output, wherever an agent leaves them (worktree root included)
+node_modules/
+test-results/
+
 # --- ShadowChain ---
 # SQLite runtime files (WAL mode)
 *.db

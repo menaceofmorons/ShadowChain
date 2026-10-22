@@ -42,6 +42,8 @@ The highest version is always self-contained. When you write version `x+1`, **mo
 **Rules for every test:**
 - If you can't state **Why a human**, automate the test instead of carding it. A scenario an automated test already covers is not carded.
 - Keep it terse: one or two lines per field, steps as a short numbered list, no background beyond Why a human.
+- **Shared setup:** short numbered steps, one action per step, with commands in their own fenced block. Follow with a short "What you'll see" list and, only when needed, a short "Ignore" list of known placeholders and limits. Drop background, or keep it to one line.
+- **Prerequisites:** list only what the Developer must satisfy and the package's automation does not already guarantee. Each gives an exact check (a command and its expected output, or what to look for) and an exact fix. A browser requirement names a browser the Developer opens (e.g. Chrome or Edge). A code-state prerequisite is checked by commit SHA, never by commit-message wording: `git -C {Run from} merge-base --is-ancestor {sha} HEAD && echo OK`, expected `OK`.
 - Give exact commands and steps, the expected output, and a plain-text explanation of what to do. Tests must be repeatable, observable, objective and executable; nothing left to guessing.
 - **State-modifying tests** (env vars, DB contents, config files, app settings) must record the original state, execute, then restore it, with the rollback steps written out explicitly.
 - Put every parameter, code snippet, script, command, and directory path to be copied or run in a fenced block.
@@ -51,7 +53,18 @@ The highest version is always self-contained. When you write version `x+1`, **mo
 
 ```Markdown
 **Run from:** {the brief's Lead worktree path}
-**Shared setup:** {steps common to all tests, run once; record any state to restore}
+
+## Prerequisites (omit if none)
+- {prerequisite}. Check: {command and expected output, or what to look for}. Fix: {exact command or step}
+
+## Setup (run once; record any state to restore)
+1. {one action per step; commands in their own fenced block}
+
+## What you'll see
+- {short list}
+
+## Ignore (only when needed)
+- {known placeholder or limit}
 
 # 1. {Test Name}
 - **Why a human:** [what the Developer judges that automation cannot, and which automated test covers the rest]

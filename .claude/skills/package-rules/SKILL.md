@@ -26,7 +26,7 @@ The Team Lead's brief is Developer direction. You cannot ask the Developer quest
 - Never leave uncommitted work when you return.
 
 ### Worktree Setup
-Run Config's Worktree Setup commands before any build. If one fails because a local file is missing (e.g. `.env`), return `BLOCKED` naming the file.
+Run Config's Worktree Setup commands before any build. If one fails because a local file is missing (e.g. `.env`), return `BLOCKED` naming the file. Install and test only with the Config's commands, run as written; never install at the worktree root or leave build or test output there.
 
 ### STOP and return BLOCKED (do not guess) when
 - An `[OD-nn]` tag governs something you must implement.

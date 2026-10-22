@@ -1,6 +1,6 @@
 ---
 name: package-handover
-description: Package handover document template and the RESULT return contract every package agent must end with.
+description: Package handover document template and the RESULT return contract every package agent must end with, plus the analysis file and RESULT block of pkg-analyst.
 user-invocable: false
 metadata:
   source: agent-team framework v5.0
@@ -58,4 +58,35 @@ HANDOVER: {path | not written}
 SPILLOVER: {≤15 words | None}
 ISSUE: {BLOCKED/FAILED only: one-line problem}
 OPTIONS: {BLOCKED only: A) … B) … | Recommendation: X — reason}
+```
+
+## Analysis file (`pkg-analyst`; write at the brief's Analysis path)
+Keep it under ~50 lines. It is read by the Developer and by the fix agent that cites it, never by the Team Lead.
+
+```Markdown
+# Analysis — AN-{WS}.{n} — {Slug}
+**Question:** {one line} | **Base:** {base sha} | **Date:** {date}
+
+## Findings
+- {finding}: {≤1 line evidence with a path or § tag}
+
+## Options
+- A) {option}: {≤2 lines: effect, cost, risk}
+- B) {option}: {≤2 lines}
+
+## Recommendation
+{X — reason, ≤2 lines}
+
+## Open Points
+- {what could not be determined | None}
+```
+
+## Analysis RESULT block (`pkg-analyst`; the last thing you output, nothing after it)
+
+```
+RESULT: ANALYSED | FAILED
+AN: AN-{WS}.{n}
+FILE: {path | not written}
+OPTIONS: A) … B) … | Recommendation: X — reason
+ISSUE: {FAILED only: one-line problem}
 ```

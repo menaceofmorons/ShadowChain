@@ -26,7 +26,7 @@ def block(msg):
     print(f"Team Lead guard: {msg}", file=sys.stderr)
     sys.exit(2)
 
-ALLOWED_AGENTS = {"pkg-developer", "pkg-integrator", "health-check", "code-reviewer"}
+ALLOWED_AGENTS = {"pkg-developer", "pkg-integrator", "pkg-analyst", "health-check", "code-reviewer"}
 WRITE_OK = (
     r"/Execution-Ledger-[^/]+\.md$",
     r"/Package-Implementation-Plan-[^/]+(?<!-Baseline)\.md$",

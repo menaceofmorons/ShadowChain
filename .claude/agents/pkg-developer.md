@@ -36,4 +36,4 @@ You implement exactly one package from the Team Lead's brief, following the prel
 6. **Finish** per `package-rules`: commit (`{PKG} - {slug}`), write the handover, return `RESULT`.
 
 ## Fix briefs
-If the brief contains `Fix:` (a Changes Requested card, a health failure or code review findings), work on the current code. Address only the stated issue. For a card, write the next card version per `dev-testing`. Then finish as above.
+If the brief contains `Fix:` (a Changes Requested card, a health failure or code review findings), work on the current code. Address only the stated issue. If the brief also has `Analysis:`, read that file first. For a card, write the next card version per `dev-testing`. Then finish as above.

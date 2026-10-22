@@ -63,6 +63,22 @@ def is_registered(path: Path) -> bool:
     return any(same(path, other) for other in registered())
 
 
+def locks() -> dict[Path, str]:
+    result = git("worktree", "list", "--porcelain")
+    found: dict[Path, str] = {}
+    current = None
+    for line in result.stdout.splitlines():
+        if line.startswith("worktree "):
+            current = Path(line[len("worktree "):])
+        elif current is not None and (line == "locked" or line.startswith("locked ")):
+            found[current] = line[len("locked"):].strip()
+    return found
+
+
+def unlock(worktree: Path) -> None:
+    git("worktree", "unlock", str(worktree))
+
+
 def admin_dir(worktree: Path) -> Path:
     pointer = worktree / ".git"
     if pointer.is_file():
@@ -85,13 +101,15 @@ def prune() -> bool:
     return True
 
 
-def remove(paths: list[str], force: bool) -> int:
+def remove(paths: list[str], force: bool, release: bool) -> int:
     failed = False
     for raw in paths:
         worktree = Path(raw)
         if is_registered(worktree):
             clear_readonly(worktree)
             clear_readonly(admin_dir(worktree))
+            if release:
+                unlock(worktree)
             result = git("worktree", "remove", *(["--force"] if force else []), str(worktree))
             if result.returncode != 0:
                 failed = True
@@ -108,11 +126,16 @@ def remove(paths: list[str], force: bool) -> int:
 
 def sweep() -> int:
     root = common_dir().parent / ".claude" / "worktrees"
-    swept, left = 0, 0
+    swept, left, held = 0, 0, 0
     if root.is_dir():
         live = registered()
+        held_by = locks()
         for folder in sorted(p for p in root.iterdir() if p.is_dir()):
             if any(same(folder, other) for other in live):
+                reason = next((text for path, text in held_by.items() if same(folder, path)), None)
+                if reason is not None and folder.name.startswith(AGENT_PREFIX):
+                    held += 1
+                    print(f"locked {folder}: {reason or 'no reason given'}")
                 continue
             if folder.name.startswith(AGENT_PREFIX):
                 delete_tree(folder)
@@ -122,7 +145,7 @@ def sweep() -> int:
                 left += 1
                 print(f"left {folder}: not registered and not an agent worktree")
     ok = prune()
-    print(f"sweep: {swept} removed, {left} left")
+    print(f"sweep: {swept} removed, {left} left, {held} locked")
     return 0 if ok else 1
 
 
@@ -131,10 +154,11 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     remove_cmd = commands.add_parser("remove", help="remove the given worktrees")
     remove_cmd.add_argument("--force", action="store_true")
+    remove_cmd.add_argument("--unlock", action="store_true")
     remove_cmd.add_argument("paths", nargs="+")
     commands.add_parser("sweep", help="delete unregistered agent worktrees and prune stale entries")
     args = parser.parse_args()
-    sys.exit(remove(args.paths, args.force) if args.command == "remove" else sweep())
+    sys.exit(remove(args.paths, args.force, args.unlock) if args.command == "remove" else sweep())
 
 
 if __name__ == "__main__":
