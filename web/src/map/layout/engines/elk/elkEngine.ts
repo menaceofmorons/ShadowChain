@@ -5,11 +5,12 @@ import { nodeSize, resolveEngineOptions } from '../../engineOptions';
 import type { EngineOptions } from '../../engineOptions';
 import { placementFlags } from '../../placementFlags';
 import type { LayoutEngine, LayoutMode, LayoutRequest, PlacedNode } from '../../types';
+import { placeRadialIncrementally } from './radialIncremental';
 
 const RANDOM_SEED = '1';
-const RADIAL_COMPACTION_STEP = '8';
 const RING_STEP_GROWTH = 1.03;
 const MAX_RING_STEP_ATTEMPTS = 200;
+// TUNE: total widening passes allowed for one full radial layout, shared across ring growth attempts.
 const MAX_WIDENINGS = 20000;
 const WIDEN_FRACTION = 0.1;
 const FULL_TURN = 2 * Math.PI;
@@ -38,8 +39,7 @@ function modeOptions(mode: LayoutMode, options: EngineOptions, radialRadius: num
         'elk.radial.radius': String(radialRadius),
         'elk.radial.centerOnRoot': 'true',
         'elk.radial.wedgeCriteria': 'LEAF_NUMBER',
-        'elk.radial.compactor': 'RADIAL_COMPACTION',
-        'elk.radial.compactionStepSize': RADIAL_COMPACTION_STEP,
+        'elk.radial.compactor': 'NONE',
       };
   }
 }
@@ -171,10 +171,12 @@ function levelRadii(
   levelCounts: readonly number[],
   minStep: number,
   slot: number,
+  budget: { left: number },
 ): number[] {
   const steps = levelCounts.map((_, depth) => (depth === 0 ? 0 : minStep));
   let radii = cumulative(steps);
-  for (let attempt = 0; attempt < MAX_WIDENINGS; attempt += 1) {
+  while (budget.left > 0) {
+    budget.left -= 1;
     const needs = angleNeeds(root, ordered, radii, slot);
     if ((needs.get(root.keyString) as number) <= FULL_TURN) {
       break;
@@ -269,9 +271,10 @@ function placeOnLevelRings(
   };
   count(root, 0);
   let growth = 1;
+  const budget = { left: MAX_WIDENINGS };
   let boxes: Box[] = [];
   for (let attempt = 0; attempt < MAX_RING_STEP_ATTEMPTS; attempt += 1) {
-    const radii = levelRadii(root, ordered, levelCounts, minStep * growth, slot * growth);
+    const radii = levelRadii(root, ordered, levelCounts, minStep * growth, slot * growth, budget);
     const needs = angleNeeds(root, ordered, radii, slot * growth);
     boxes = levelBoxes(wedgeSlots(root, ordered, needs, options), radii);
     if (!hasOverlap(boxes, gap / 2)) {
@@ -298,6 +301,24 @@ export function createElkEngine(overrides: Partial<EngineOptions> = {}): LayoutE
   const elk = new ELK();
   return {
     async layout(request) {
+      if (request.type === 'incremental' && request.mode === 'radial') {
+        const spots = placeRadialIncrementally(request, options);
+        if (spots !== null) {
+          const placed = new Map<string, PlacedNode>();
+          for (const node of request.tree.nodes) {
+            const spot = spots.get(node.keyString) as { x: number; y: number };
+            placed.set(node.keyString, {
+              nodeKey: node.keyString,
+              x: spot.x,
+              y: spot.y,
+              source: 'auto',
+              ...placementFlags(request, node),
+            });
+          }
+          applyManual(placed, request);
+          return [...placed.values()];
+        }
+      }
       const radius = initialRadialRadius(request.tree.nodes.length, options);
       const arranged = await elk.layout(toElkGraph(request, options, radius));
       const laidOut: ElkNode =

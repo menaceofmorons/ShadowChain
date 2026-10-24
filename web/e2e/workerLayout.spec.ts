@@ -73,8 +73,11 @@ test.describe('registry engines in a real worker', () => {
         description: `full p95 ${fullLayoutMs.p95.toFixed(2)} ms; addition p95 ${additionLayoutMs.p95.toFixed(2)} ms`,
       });
       expect(fullLayoutMs.count).toBe(3);
-      if (mode !== 'radial') {
-        expect(fullLayoutMs.p95).toBeLessThan(FULL_TARGET_MS);
+      expect(fullLayoutMs.p95).toBeLessThan(FULL_TARGET_MS);
+      if (mode === 'radial') {
+        expect(additionLayoutMs.median).toBeLessThan(INCREMENTAL_TARGET_MS);
+        expect(additionLayoutMs.p95).toBeLessThan(FULL_TARGET_MS);
+      } else {
         expect(additionLayoutMs.p95).toBeLessThan(INCREMENTAL_TARGET_MS);
         expect(first.report.nodesMovedPerAddition.max).toBe(0);
       }
