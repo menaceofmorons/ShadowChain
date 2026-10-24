@@ -70,3 +70,4 @@ metadata:
 - elk radial with `compactor: 'NONE'` is about 4x faster when elk only supplies child order (WS-1.3)
 - Time-asserting layout tests need a warm-up call; the first elk call dominates p95 on small samples (WS-1.3)
 - Incremental and full radial return nodes in different orders; compare layouts by node key, and use `toBeCloseTo` across `toHundredths` rounding (WS-1.3)
+- e2e specs and the Playwright host can import `web/src/` constants directly; share thresholds rather than duplicating them (WS-1.3)
