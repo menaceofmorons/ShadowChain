@@ -149,6 +149,17 @@ export function placeRadialIncrementally(
   };
   carryWalk(root, null);
   const carriedKeys = new Set(carryShift.keys());
+  const deferred = new Set<string>();
+  const deferWalk = (node: ChainNode, underManual: boolean): void => {
+    if (underManual) {
+      deferred.add(node.keyString);
+    }
+    const below = underManual || (node !== root && manual.has(node.keyString));
+    for (const child of node.children) {
+      deferWalk(child, below);
+    }
+  };
+  deferWalk(root, false);
   for (const key of carriedKeys) {
     manualKeys.add(key);
   }
@@ -431,6 +442,10 @@ export function placeRadialIncrementally(
   }
 
   for (const node of added) {
+    if (deferred.has(node.keyString)) {
+      manualKeys.add(node.keyString);
+      continue;
+    }
     const depth = depthOf(node.keyString);
     const parent = parents.get(node.keyString) as ChainNode;
     const radius = ringRadius(depth);

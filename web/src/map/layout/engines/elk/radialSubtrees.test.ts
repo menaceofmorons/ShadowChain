@@ -212,6 +212,49 @@ for (const size of SIZES) {
     });
   });
 
+  describe(`radial ${String(size)} nodes: additions under a manual node are carried with it`, () => {
+    const growUnder = (parentSystem: number): ChainGraph => {
+      const id = Math.max(...graph.systems.map((s) => s.id)) + 1;
+      return {
+        systems: [...graph.systems, { id }],
+        connections: [
+          ...graph.connections,
+          {
+            id: Math.max(...graph.connections.map((c) => c.id)) + 1,
+            createdAt: Math.max(...graph.connections.map((c) => c.createdAt)) + 1,
+            endA: parentSystem,
+            endB: id,
+          },
+        ],
+      };
+    };
+
+    for (const where of ['the manual node itself', 'a carried descendant']) {
+      it(`a node added under ${where} lands at its full-layout slot plus the manual offset, clear of others`, async () => {
+        const tree = treeOf(graph);
+        const previous = await layoutOf(full(tree));
+        const target = interior(tree);
+        const start = byKey(previous).get(target.keyString) as PlacedNode;
+        const manual = [{ nodeKey: target.keyString, x: start.x + OFFSET.x, y: start.y + OFFSET.y }];
+        const moved = await layoutOf(incremental(tree, previous, { manualPositions: manual }));
+        const parent = where === 'the manual node itself' ? target : (target.children[0] as ChainNode);
+        const grown = treeOf(growUnder(parent.systemId as number));
+        const known = new Set(tree.nodes.map((n) => n.keyString));
+        const addedNodeKeys = grown.nodes.map((n) => n.keyString).filter((key) => !known.has(key));
+        expect(addedNodeKeys).toHaveLength(1);
+        const placed = await layoutOf(incremental(grown, moved, { manualPositions: manual, addedNodeKeys }));
+        const expected = byKey(await layoutOf(full(grown, manual)));
+        near(byKey(placed).get(addedNodeKeys[0] as string), expected.get(addedNodeKeys[0] as string) as PlacedNode);
+        expect(placed).toHaveLength(grown.nodes.length);
+        expect(
+          countOverlaps(
+            placed.filter((n) => [target.keyString, ...subtreeKeys(target), ...addedNodeKeys].includes(n.nodeKey)),
+          ),
+        ).toBe(0);
+      });
+    }
+  });
+
   describe(`radial ${String(size)} nodes: collapse lays a branch out as one +N node`, () => {
     it('the +N leaf carries the hidden count, the target carries the collapsed state, rings hold', async () => {
       const tree = treeOf(graph);
