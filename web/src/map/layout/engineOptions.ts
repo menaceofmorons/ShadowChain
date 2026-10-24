@@ -1,8 +1,12 @@
+import type { ChainNode } from '../model/types';
+
 export interface EngineOptions {
   readonly nodeWidth: number;
   readonly nodeHeight: number;
   readonly aliasWidth: number;
   readonly aliasHeight: number;
+  readonly collapsedWidth: number;
+  readonly collapsedHeight: number;
   readonly siblingSpacing: number;
   readonly levelSpacing: number;
 }
@@ -12,10 +16,23 @@ export const DEFAULT_ENGINE_OPTIONS: EngineOptions = {
   nodeHeight: 48,
   aliasWidth: 96,
   aliasHeight: 32,
+  collapsedWidth: 64,
+  collapsedHeight: 32,
   siblingSpacing: 32,
   levelSpacing: 64,
 };
 
 export function resolveEngineOptions(overrides: Partial<EngineOptions> = {}): EngineOptions {
   return { ...DEFAULT_ENGINE_OPTIONS, ...overrides };
+}
+
+export function nodeSize(node: ChainNode, options: EngineOptions): { width: number; height: number } {
+  switch (node.kind) {
+    case 'alias':
+      return { width: options.aliasWidth, height: options.aliasHeight };
+    case 'collapsed':
+      return { width: options.collapsedWidth, height: options.collapsedHeight };
+    default:
+      return { width: options.nodeWidth, height: options.nodeHeight };
+  }
 }

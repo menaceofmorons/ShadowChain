@@ -9,7 +9,15 @@ import { countMovedNodes } from './movement';
 import { runHarness } from './metricsHarness';
 import { summarise } from './stats';
 
-const node = (nodeKey: string, x: number, y: number): PlacedNode => ({ nodeKey, x, y, source: 'auto', alias: false });
+const node = (nodeKey: string, x: number, y: number): PlacedNode => ({
+  nodeKey,
+  x,
+  y,
+  source: 'auto',
+  alias: false,
+  collapsed: false,
+  hiddenCount: null,
+});
 
 const sequenceClock = (values: readonly number[]): (() => number) => {
   let index = 0;
