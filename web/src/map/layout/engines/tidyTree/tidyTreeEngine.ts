@@ -5,6 +5,7 @@ import { placementFlags } from '../../placementFlags';
 import { LayoutError } from '../../types';
 import type { LayoutEngine, LayoutMode, LayoutRequest, ManualPosition, PlacedNode } from '../../types';
 import { incrementalSlots } from './incrementalPlacement';
+import { carryManualSubtrees } from './relativeSubtrees';
 import { childrenOf, extentOf, toPoint } from './tidyTreeGeometry';
 import type { Slot } from './tidyTreeGeometry';
 
@@ -103,7 +104,7 @@ function freshSlots(request: LayoutRequest, options: EngineOptions): Map<string,
     const centre = node.keyString === root.keyString ? 0 : (offsets.get(node.keyString) ?? 0);
     const band = levelAlong[depth] as number;
     slots.set(node.keyString, {
-      across: centre - extent.across / 2,
+      across: centre - extent.across / 2 + (request.rootOffset ?? 0),
       along: (levelStart[depth] as number) + (band - extent.along) / 2,
     });
   }
@@ -111,7 +112,10 @@ function freshSlots(request: LayoutRequest, options: EngineOptions): Map<string,
 }
 
 function placeNodes(request: LayoutRequest, options: EngineOptions): PlacedNode[] {
-  const slots = request.type === 'full' ? freshSlots(request, options) : incrementalSlots(request, options);
+  const slots =
+    request.type === 'full'
+      ? carryManualSubtrees(request.tree.root, request.mode, freshSlots(request, options), request.manualPositions)
+      : incrementalSlots(request, options);
   const flags = (node: ChainNode) => placementFlags(request, node);
   const manual = new Map<string, ManualPosition>(
     request.manualPositions.map((position) => [position.nodeKey, position]),

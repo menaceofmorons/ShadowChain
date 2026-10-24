@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { ReactFlowProvider, useReactFlow, useStoreApi } from '@xyflow/react';
 import {
   buildChainTree,
+  collapseChainTree,
   createRegistryAdapter,
   engineEntryForMode,
   generateChain,
@@ -23,6 +24,7 @@ export interface CanvasHostState {
   nodeCount: number;
   expectedNodeCount: number;
   edgeCount: number;
+  collapsedCount: number;
 }
 
 declare global {
@@ -36,6 +38,7 @@ const modeParam = params.get('mode') ?? 'top-down';
 const mode = LAYOUT_MODES.find((candidate) => candidate === modeParam) ?? 'top-down';
 const size = Number(params.get('size') ?? 150);
 const seed = Number(params.get('seed') ?? 7);
+const collapse = Number(params.get('collapse') ?? 0);
 const MIN_ZOOM = 0.02;
 
 window.__canvas = {
@@ -46,6 +49,7 @@ window.__canvas = {
   nodeCount: 0,
   expectedNodeCount: 0,
   edgeCount: 0,
+  collapsedCount: 0,
 };
 
 interface Scene {
@@ -57,13 +61,11 @@ function collectEdges(root: ChainNode): CanvasEdge[] {
   const edges: CanvasEdge[] = [];
   const visit = (node: ChainNode): void => {
     for (const child of node.children) {
-      if (child.parentEdge !== null) {
-        edges.push({
-          connectionId: String(child.parentEdge.connectionId),
-          sourceKey: node.keyString,
-          targetKey: child.keyString,
-        });
-      }
+      edges.push({
+        connectionId: child.parentEdge === null ? child.keyString : String(child.parentEdge.connectionId),
+        sourceKey: node.keyString,
+        targetKey: child.keyString,
+      });
       visit(child);
     }
   };
@@ -71,14 +73,33 @@ function collectEdges(root: ChainNode): CanvasEdge[] {
   return edges;
 }
 
+function collapseTargets(root: ChainNode, count: number): string[] {
+  const targets: string[] = [];
+  const visit = (node: ChainNode): void => {
+    if (targets.length >= count) {
+      return;
+    }
+    if (node !== root && node.kind === 'primary' && node.children.length > 0) {
+      targets.push(node.keyString);
+      return;
+    }
+    node.children.forEach(visit);
+  };
+  visit(root);
+  return targets;
+}
+
 async function buildScene(): Promise<Scene> {
-  const tree = buildChainTree(generateChain({ nodeCount: size, seed }), SYNTHETIC_ROOT_SYSTEM_ID);
+  const fullTree = buildChainTree(generateChain({ nodeCount: size, seed }), SYNTHETIC_ROOT_SYSTEM_ID);
+  const collapsedKeys = collapseTargets(fullTree.root, collapse);
+  const tree = collapseChainTree(fullTree, new Set(collapsedKeys));
   const adapter = createRegistryAdapter();
   try {
     window.__canvas.expectedNodeCount = tree.nodes.length;
-    const placed = await adapter.layout({ type: 'full', tree, mode, manualPositions: [] });
+    window.__canvas.collapsedCount = collapsedKeys.length;
+    const placed = await adapter.layout({ type: 'full', tree, mode, manualPositions: [], collapsedKeys });
     return {
-      nodes: placed.map((p) => ({ key: p.nodeKey, x: p.x, y: p.y, isAlias: p.alias })),
+      nodes: placed.map((p) => ({ key: p.nodeKey, x: p.x, y: p.y, isAlias: p.alias, hiddenCount: p.hiddenCount })),
       edges: collectEdges(tree.root),
     };
   } finally {
@@ -122,7 +143,10 @@ function Host() {
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'sans-serif' }}>
       <div style={{ padding: 8, display: 'flex', gap: 16 }}>
         {LAYOUT_MODES.map((candidate) => (
-          <a key={candidate} href={`?mode=${candidate}&size=${String(size)}&seed=${String(seed)}`}>
+          <a
+            key={candidate}
+            href={`?mode=${candidate}&size=${String(size)}&seed=${String(seed)}&collapse=${String(collapse)}`}
+          >
             {candidate === mode ? `[${candidate}]` : candidate}
           </a>
         ))}

@@ -34,7 +34,7 @@ const shifted = (rect: Rect, dAcross: number, dAlong: number): Rect => ({
 });
 
 const vanishedRect = (prior: PlacedNode, mode: LayoutMode, options: EngineOptions): Rect => {
-  const kind = prior.alias ? 'alias' : prior.collapsed ? 'collapsed' : 'primary';
+  const kind = prior.alias ? 'alias' : prior.hiddenCount !== null ? 'collapsed' : 'primary';
   const { width, height } = nodeSize({ kind } as ChainNode, options);
   const slot = toSlot(mode, prior.x, prior.y);
   const across = mode === 'top-down' ? width : height;
@@ -98,6 +98,15 @@ class Placement {
 
   membersOf(nodes: readonly ChainNode[]): Member[] {
     return nodes.map((node) => ({ key: node.keyString, rect: this.rects.get(node.keyString) as Rect }));
+  }
+
+  translate(deltas: ReadonlyMap<string, { readonly across: number; readonly along: number }>): void {
+    for (const [key, rect] of [...this.rects]) {
+      const delta = deltas.get(key);
+      if (delta !== undefined) {
+        this.rects.set(key, shifted(rect, delta.across, delta.along));
+      }
+    }
   }
 
   slots(): Map<string, Slot> {
@@ -298,30 +307,49 @@ class Placement {
   }
 }
 
+interface Delta {
+  readonly across: number;
+  readonly along: number;
+}
+
+const NO_DELTA: Delta = { across: 0, along: 0 };
+
+function carryDeltas(
+  ordered: readonly ChainNode[],
+  parents: ReadonlyMap<string, ChainNode>,
+  prior: ReadonlyMap<string, Slot>,
+  manual: ReadonlyMap<string, Slot>,
+  rootTarget: Slot | undefined,
+): Map<string, Delta> {
+  const deltas = new Map<string, Delta>();
+  for (const node of ordered) {
+    const before = prior.get(node.keyString);
+    const pinned = manual.get(node.keyString);
+    const parent = parents.get(node.keyString);
+    if (before === undefined) {
+      deltas.set(node.keyString, NO_DELTA);
+    } else if (pinned !== undefined) {
+      deltas.set(node.keyString, { across: pinned.across - before.across, along: pinned.along - before.along });
+    } else if (parent === undefined) {
+      deltas.set(
+        node.keyString,
+        rootTarget === undefined
+          ? NO_DELTA
+          : { across: rootTarget.across - before.across, along: rootTarget.along - before.along },
+      );
+    } else {
+      deltas.set(node.keyString, deltas.get(parent.keyString) ?? NO_DELTA);
+    }
+  }
+  return deltas;
+}
+
 export function incrementalSlots(request: IncrementalLayoutRequest, options: EngineOptions): Map<string, Slot> {
   const { mode, tree } = request;
   const nodes = new Map(tree.nodes.map((node) => [node.keyString, node]));
   const manual = new Map(request.manualPositions.filter((p) => nodes.has(p.nodeKey)).map((p) => [p.nodeKey, p]));
   const removed = new Set(request.removedNodeKeys);
   const placement = new Placement(mode, options, new Set(manual.keys()));
-
-  const gaps: Rect[] = [];
-  for (const prior of request.previous) {
-    const node = nodes.get(prior.nodeKey);
-    if (node === undefined || removed.has(prior.nodeKey)) {
-      if (prior.source !== 'manual' && !manual.has(prior.nodeKey)) {
-        gaps.push(vanishedRect(prior, mode, options));
-      }
-    } else if (!manual.has(prior.nodeKey)) {
-      placement.remember(node, toSlot(mode, prior.x, prior.y));
-    }
-  }
-  for (const position of manual.values()) {
-    placement.remember(nodes.get(position.nodeKey) as ChainNode, toSlot(mode, position.x, position.y));
-  }
-
-  placement.repack(gaps, tree.nodes);
-  const hasRemoval = gaps.length > 0 || removed.size > 0;
 
   const parents = new Map<string, ChainNode>();
   const ordered: ChainNode[] = [];
@@ -333,6 +361,46 @@ export function incrementalSlots(request: IncrementalLayoutRequest, options: Eng
     }
   };
   visit(tree.root);
+
+  const prior = new Map<string, Slot>();
+  for (const placed of request.previous) {
+    if (nodes.has(placed.nodeKey) && !removed.has(placed.nodeKey)) {
+      prior.set(placed.nodeKey, toSlot(mode, placed.x, placed.y));
+    }
+  }
+  const manualSlots = new Map([...manual].map(([key, position]) => [key, toSlot(mode, position.x, position.y)]));
+  const rootExtent = extentOf(tree.root, mode, options);
+  const previousRoot = request.previous.find((placed) => placed.nodeKey === tree.root.keyString);
+  const snapRoot =
+    previousRoot !== undefined &&
+    !manual.has(tree.root.keyString) &&
+    (request.rootOffset !== undefined || previousRoot.source === 'manual');
+  const rootTarget: Slot | undefined = snapRoot
+    ? { across: (request.rootOffset ?? 0) - rootExtent.across / 2, along: 0 }
+    : undefined;
+  const deltas = carryDeltas(ordered, parents, prior, manualSlots, rootTarget);
+
+  const gaps: Rect[] = [];
+  for (const placed of request.previous) {
+    const node = nodes.get(placed.nodeKey);
+    if (node === undefined || removed.has(placed.nodeKey)) {
+      if (placed.source !== 'manual' && !manual.has(placed.nodeKey)) {
+        gaps.push(vanishedRect(placed, mode, options));
+      }
+    } else {
+      placement.remember(node, prior.get(placed.nodeKey) as Slot);
+    }
+  }
+
+  placement.repack(gaps, tree.nodes);
+  placement.translate(deltas);
+  for (const position of manual.values()) {
+    if (!prior.has(position.nodeKey)) {
+      placement.remember(nodes.get(position.nodeKey) as ChainNode, toSlot(mode, position.x, position.y));
+    }
+  }
+  const hasRemoval = gaps.length > 0 || removed.size > 0;
+
   for (const node of ordered) {
     const parent = parents.get(node.keyString);
     if (!placement.has(node.keyString)) {
