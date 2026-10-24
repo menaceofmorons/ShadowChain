@@ -67,3 +67,5 @@ metadata:
 - Go files are forced to LF by `.gitattributes` (`*.go text eol=lf`); gofmt flags CRLF working copies from `core.autocrlf=true` (WS-1.3)
 - Tidy-tree full-layout rows centre nodes within the level band, so a child's along differs from parent.along + size + spacing by up to the node-size spread; geometric checks need that slack (WS-1.3)
 - `ReactFlowCanvas` sizes nodes from `DEFAULT_ENGINE_OPTIONS` via `nodeSize`; route any new node kind through it so drawn size equals engine size (WS-1.3)
+- elk radial with `compactor: 'NONE'` is about 4x faster when elk only supplies child order (WS-1.3)
+- Time-asserting layout tests need a warm-up call; the first elk call dominates p95 on small samples (WS-1.3)
