@@ -65,3 +65,4 @@ metadata:
 - Agent shells reject multi-expression `sed -i`; line-pattern `sed` deletes can cut multi-line statements, so use Edit (WS-1.2)
 - e2e host selects an engine via the Worker `name` option (`self.name`); register new engines in `web/e2e/host/engines.ts` (WS-1.2)
 - Go files are forced to LF by `.gitattributes` (`*.go text eol=lf`); gofmt flags CRLF working copies from `core.autocrlf=true` (WS-1.3)
+- Tidy-tree full-layout rows centre nodes within the level band, so a child's along differs from parent.along + size + spacing by up to the node-size spread; geometric checks need that slack (WS-1.3)
