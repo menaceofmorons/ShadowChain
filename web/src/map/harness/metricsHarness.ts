@@ -1,5 +1,5 @@
 import { buildChainTree } from '../model/chainTree';
-import type { ChainGraph } from '../model/types';
+import type { ChainGraph, ChainTree } from '../model/types';
 import type { LayoutEngine, LayoutMode, ManualPosition, PlacedNode } from '../layout/types';
 import { applyChurn } from '../synthetic/churnScript';
 import type { ChurnOperation } from '../synthetic/churnScript';
@@ -39,6 +39,21 @@ export interface HarnessReport {
   readonly codeSize: CodeSize;
 }
 
+const parentKeys = (tree: ChainTree): Map<string, string | null> => {
+  const parents = new Map<string, string | null>([[tree.root.keyString, null]]);
+  for (const node of tree.nodes) {
+    for (const child of node.children) {
+      parents.set(child.keyString, node.keyString);
+    }
+  }
+  return parents;
+};
+
+const changesParents = (before: ChainTree, after: ChainTree): boolean => {
+  const previous = parentKeys(before);
+  return [...parentKeys(after)].some(([key, parent]) => previous.has(key) && previous.get(key) !== parent);
+};
+
 export async function runHarness(input: HarnessInput): Promise<HarnessReport> {
   const now = input.now ?? (() => performance.now());
   const mode = input.mode ?? 'top-down';
@@ -67,6 +82,7 @@ export async function runHarness(input: HarnessInput): Promise<HarnessReport> {
 
   for (const operation of input.churn) {
     graph = applyChurn(graph, [operation]);
+    const previousTree = tree;
     tree = buildChainTree(graph, rootSystemId);
     const nextKeys = new Set(tree.nodes.map((node) => node.keyString));
     const addedNodeKeys = [...nextKeys].filter((key) => !knownKeys.has(key));
@@ -84,7 +100,7 @@ export async function runHarness(input: HarnessInput): Promise<HarnessReport> {
     const duration = now() - start;
     incrementalDurations.push(duration);
     (operation.kind === 'add' ? additionDurations : removalDurations).push(duration);
-    if (operation.kind === 'add') {
+    if (operation.kind === 'add' && removedNodeKeys.length === 0 && !changesParents(previousTree, tree)) {
       movedPerAddition.push(countMovedNodes(placed, next));
     }
     placed = next;

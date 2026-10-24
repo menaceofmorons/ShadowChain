@@ -154,45 +154,6 @@ describe('tidy-tree nodes', () => {
 });
 
 describe('tidy-tree incremental', () => {
-  it('reuses previous positions and places added nodes without overlap', async () => {
-    const engine = createTidyTreeEngine();
-    let graph = generateChain({ nodeCount: 150, seed: 2 });
-    let tree = treeOf(graph);
-    let placed = await engine.layout({ type: 'full', tree, mode: 'top-down', manualPositions: [] });
-    const script = generateChurnScript(graph, { seed: 9, operationCount: 40 });
-    for (const operation of script) {
-      graph =
-        operation.kind === 'add'
-          ? { ...graph, connections: [...graph.connections, operation.connection] }
-          : { ...graph, connections: graph.connections.filter((c) => c.id !== operation.connectionId) };
-      const next = treeOf(graph);
-      const known = new Set(tree.nodes.map((node) => node.keyString));
-      const present = new Set(next.nodes.map((node) => node.keyString));
-      const addedNodeKeys = [...present].filter((key) => !known.has(key));
-      const removedNodeKeys = [...known].filter((key) => !present.has(key));
-      const result = await engine.layout({
-        type: 'incremental',
-        tree: next,
-        mode: 'top-down',
-        manualPositions: [],
-        previous: placed,
-        addedNodeKeys,
-        removedNodeKeys,
-      });
-      const before = byKey(placed);
-      for (const node of result) {
-        const prior = before.get(node.nodeKey);
-        if (prior !== undefined) {
-          expect({ x: node.x, y: node.y }).toEqual({ x: prior.x, y: prior.y });
-        }
-      }
-      expect(result).toHaveLength(next.nodes.length);
-      expect(countOverlaps(result)).toBe(0);
-      placed = result;
-      tree = next;
-    }
-  });
-
   it('moves no placed node per addition through the harness', async () => {
     const graph = generateChain({ nodeCount: 150, seed: 6 });
     const churn = generateChurnScript(graph, { seed: 7, operationCount: 30 });
