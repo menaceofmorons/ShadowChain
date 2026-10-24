@@ -5,9 +5,9 @@ import { nodeSize, resolveEngineOptions } from '../../engineOptions';
 import type { EngineOptions } from '../../engineOptions';
 import { placementFlags } from '../../placementFlags';
 import type { LayoutEngine, LayoutMode, LayoutRequest, PlacedNode } from '../../types';
+import { placeRadialIncrementally } from './radialIncremental';
 
 const RANDOM_SEED = '1';
-const RADIAL_COMPACTION_STEP = '8';
 const RING_STEP_GROWTH = 1.03;
 const MAX_RING_STEP_ATTEMPTS = 200;
 const MAX_WIDENINGS = 20000;
@@ -38,8 +38,7 @@ function modeOptions(mode: LayoutMode, options: EngineOptions, radialRadius: num
         'elk.radial.radius': String(radialRadius),
         'elk.radial.centerOnRoot': 'true',
         'elk.radial.wedgeCriteria': 'LEAF_NUMBER',
-        'elk.radial.compactor': 'RADIAL_COMPACTION',
-        'elk.radial.compactionStepSize': RADIAL_COMPACTION_STEP,
+        'elk.radial.compactor': 'NONE',
       };
   }
 }
@@ -298,6 +297,24 @@ export function createElkEngine(overrides: Partial<EngineOptions> = {}): LayoutE
   const elk = new ELK();
   return {
     async layout(request) {
+      if (request.type === 'incremental' && request.mode === 'radial') {
+        const spots = placeRadialIncrementally(request, options);
+        if (spots !== null) {
+          const placed = new Map<string, PlacedNode>();
+          for (const node of request.tree.nodes) {
+            const spot = spots.get(node.keyString) as { x: number; y: number };
+            placed.set(node.keyString, {
+              nodeKey: node.keyString,
+              x: spot.x,
+              y: spot.y,
+              source: 'auto',
+              ...placementFlags(request, node),
+            });
+          }
+          applyManual(placed, request);
+          return [...placed.values()];
+        }
+      }
       const radius = initialRadialRadius(request.tree.nodes.length, options);
       const arranged = await elk.layout(toElkGraph(request, options, radius));
       const laidOut: ElkNode =

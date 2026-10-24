@@ -94,22 +94,25 @@ describe.each(LAYOUT_MODES)('elk engine in %s mode', (mode) => {
     expect(placed.some((n) => n.nodeKey === 'missing')).toBe(false);
   });
 
-  it('answers an incremental request exactly as the full layout of the same tree', async () => {
-    const graph = generateChain({ nodeCount: 50, seed: 7 });
-    const before = await engine.layout(full(buildChainTree(graph, SYNTHETIC_ROOT_SYSTEM_ID), mode));
-    const churn = generateChurnScript(graph, { seed: 4, operationCount: 1 });
-    const tree = buildChainTree(applyChurn(graph, churn), SYNTHETIC_ROOT_SYSTEM_ID);
-    const incremental = await engine.layout({
-      type: 'incremental',
-      tree,
-      mode,
-      manualPositions: [],
-      previous: before,
-      addedNodeKeys: [],
-      removedNodeKeys: [],
-    });
-    expect(incremental).toEqual(await engine.layout(full(tree, mode)));
-  });
+  it.skipIf(mode === 'radial')(
+    'answers an incremental request exactly as the full layout of the same tree',
+    async () => {
+      const graph = generateChain({ nodeCount: 50, seed: 7 });
+      const before = await engine.layout(full(buildChainTree(graph, SYNTHETIC_ROOT_SYSTEM_ID), mode));
+      const churn = generateChurnScript(graph, { seed: 4, operationCount: 1 });
+      const tree = buildChainTree(applyChurn(graph, churn), SYNTHETIC_ROOT_SYSTEM_ID);
+      const incremental = await engine.layout({
+        type: 'incremental',
+        tree,
+        mode,
+        manualPositions: [],
+        previous: before,
+        addedNodeKeys: [],
+        removedNodeKeys: [],
+      });
+      expect(incremental).toEqual(await engine.layout(full(tree, mode)));
+    },
+  );
 
   it('runs the churn harness and reports movement and timings', async () => {
     const graph = generateChain({ nodeCount: 50, seed: 3 });
@@ -334,6 +337,7 @@ describe('elk engine sources', () => {
       const allowed =
         specifier.startsWith('elkjs/') ||
         specifier === './elkEngine' ||
+        specifier === './radialIncremental' ||
         /^\.\.\/\.\.\/(?!.*canvas)/.test(specifier) ||
         /^\.\.\/\.\.\/\.\.\/model\//.test(specifier);
       expect(allowed, specifier).toBe(true);
