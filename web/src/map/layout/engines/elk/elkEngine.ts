@@ -6,6 +6,7 @@ import type { EngineOptions } from '../../engineOptions';
 import { placementFlags } from '../../placementFlags';
 import type { LayoutEngine, LayoutMode, LayoutRequest, PlacedNode } from '../../types';
 import { placeRadialIncrementally } from './radialIncremental';
+import { carryRadialSubtrees } from './radialRelativeSubtrees';
 
 const RANDOM_SEED = '1';
 const RING_STEP_GROWTH = 1.03;
@@ -288,6 +289,19 @@ function placeOnLevelRings(
 }
 
 function applyManual(placed: Map<string, PlacedNode>, request: LayoutRequest): void {
+  if (request.mode === 'radial') {
+    const carried = carryRadialSubtrees(request.tree.root, placed, request.manualPositions);
+    const manualKeys = new Set(request.manualPositions.map((position) => position.nodeKey));
+    for (const [key, spot] of carried) {
+      const node = placed.get(key) as PlacedNode;
+      if (manualKeys.has(key)) {
+        placed.set(key, { ...node, x: spot.x, y: spot.y, source: 'manual' });
+      } else {
+        placed.set(key, { ...node, x: toHundredths(spot.x), y: toHundredths(spot.y) });
+      }
+    }
+    return;
+  }
   for (const manual of request.manualPositions) {
     const node = placed.get(manual.nodeKey);
     if (node !== undefined) {

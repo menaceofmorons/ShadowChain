@@ -132,6 +132,26 @@ export function placeRadialIncrementally(
   walk(root, 0);
 
   const manualKeys = new Set(manual.keys());
+  const carryShift = new Map<string, Point>();
+  const carryWalk = (node: ChainNode, inherited: Point | null): void => {
+    const override = manual.get(node.keyString);
+    const prior = previous.get(node.keyString);
+    let shift = inherited;
+    if (node !== root && override !== undefined) {
+      shift = prior === undefined ? null : { x: override.x - prior.x, y: override.y - prior.y };
+    }
+    if (shift !== null && override === undefined && prior?.source === 'auto') {
+      carryShift.set(node.keyString, shift);
+    }
+    for (const child of node.children) {
+      carryWalk(child, shift);
+    }
+  };
+  carryWalk(root, null);
+  const carriedKeys = new Set(carryShift.keys());
+  for (const key of carriedKeys) {
+    manualKeys.add(key);
+  }
   const gap = options.siblingSpacing / 4;
   const slot = options.nodeWidth + options.siblingSpacing / 2;
   const minStep = Math.max(options.nodeWidth + options.levelSpacing, slot);
@@ -158,7 +178,12 @@ export function placeRadialIncrementally(
     if (override !== undefined) {
       remember(node, override.x, override.y, false);
     } else if (prior?.source === 'auto') {
-      remember(node, prior.x, prior.y, node !== root);
+      const shift = carryShift.get(node.keyString);
+      if (shift === undefined) {
+        remember(node, prior.x, prior.y, node !== root);
+      } else {
+        remember(node, prior.x + shift.x, prior.y + shift.y, false);
+      }
     }
   }
 
