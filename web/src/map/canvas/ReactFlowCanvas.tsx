@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { Handle, Position, ReactFlow, type Edge, type Node, type NodeProps, type NodeTypes } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { DEFAULT_ENGINE_OPTIONS } from '../layout/engineOptions';
+import type { ChainNode } from '../model/types';
+import { DEFAULT_ENGINE_OPTIONS, nodeSize } from '../layout/engineOptions';
 import type { LayoutMode } from '../layout/types';
 import type { CanvasAdapterProps } from './canvasAdapter';
 
@@ -78,8 +79,11 @@ export function ReactFlowCanvas({ nodes, edges, mode = 'top-down', onNodeSelect,
   const flowNodes = useMemo<BoxNode[]>(
     () =>
       nodes.map((n) => {
-        const width = n.isAlias ? DEFAULT_ENGINE_OPTIONS.aliasWidth : DEFAULT_ENGINE_OPTIONS.nodeWidth;
-        const height = n.isAlias ? DEFAULT_ENGINE_OPTIONS.aliasHeight : DEFAULT_ENGINE_OPTIONS.nodeHeight;
+        const collapsed = n.hiddenCount !== undefined && n.hiddenCount !== null;
+        const { width, height } = nodeSize(
+          { kind: collapsed ? 'collapsed' : n.isAlias ? 'alias' : 'primary' } as ChainNode,
+          DEFAULT_ENGINE_OPTIONS,
+        );
         const sides = SIDES[mode];
         const centred = mode === 'radial';
         const point = (position: Position) =>
@@ -88,7 +92,7 @@ export function ReactFlowCanvas({ nodes, edges, mode = 'top-down', onNodeSelect,
           id: n.key,
           type: 'box',
           position: { x: n.x, y: n.y },
-          data: { label: n.key, width, height, mode },
+          data: { label: collapsed ? `+${String(n.hiddenCount)}` : n.key, width, height, mode },
           initialWidth: width,
           initialHeight: height,
           handles: [

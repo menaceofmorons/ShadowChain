@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { CanvasHostState } from './host/canvas';
+import { DEFAULT_ENGINE_OPTIONS } from '../src/map/layout/engineOptions';
 import { LAYOUT_MODES } from '../src/map/layout/types';
 import { buildChainTree } from '../src/map/model/chainTree';
 import type { ChainNode } from '../src/map/model/types';
@@ -97,6 +98,38 @@ test.describe('radial rings as drawn on screen', () => {
       previous = ring;
     }
   });
+});
+
+test.describe('collapsed branches drawn as +N nodes', () => {
+  const COLLAPSED_BRANCHES = 5;
+  for (const mode of ['top-down', 'left-to-right'] as const) {
+    test(`${mode}: +N nodes are drawn at the engine size and nothing overlaps`, async ({ page }, testInfo) => {
+      await page.goto(
+        `/e2e/host/canvas.html?mode=${mode}&size=${String(NODE_COUNT)}&seed=7&collapse=${String(COLLAPSED_BRANCHES)}`,
+      );
+      await page.waitForFunction(() => (window as unknown as { __canvas: CanvasHostState }).__canvas.done);
+      const state = await page.evaluate(() => (window as unknown as { __canvas: CanvasHostState }).__canvas);
+      expect(state.error).toBeNull();
+      expect(state.collapsedCount).toBe(COLLAPSED_BRANCHES);
+      expect(state.nodeCount).toBe(state.expectedNodeCount);
+      expect(state.edgeCount).toBe(state.expectedNodeCount - 1);
+      const boxes = await page.evaluate(readDrawnBoxes);
+      const plusN = boxes.filter((box) => box.id.startsWith('+:'));
+      expect(plusN).toHaveLength(COLLAPSED_BRANCHES);
+      for (const box of plusN) {
+        expect(box.width).toBe(DEFAULT_ENGINE_OPTIONS.collapsedWidth);
+        expect(box.height).toBe(DEFAULT_ENGINE_OPTIONS.collapsedHeight);
+      }
+      const labels = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>('.react-flow__node')]
+          .filter((element) => (element.dataset.id ?? '').startsWith('+:'))
+          .map((element) => element.textContent ?? ''),
+      );
+      expect(labels.every((label) => /^\+\d+$/.test(label))).toBe(true);
+      expect(overlappingPairs(boxes)).toEqual([]);
+      await testInfo.attach(`canvas-collapsed-${mode}`, { body: await page.screenshot(), contentType: 'image/png' });
+    });
+  }
 });
 
 test.describe('150-node chain on the canvas through the map entry point', () => {

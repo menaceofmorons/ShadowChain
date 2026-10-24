@@ -5,6 +5,7 @@ export interface CanvasNode {
   x: number;
   y: number;
   isAlias: boolean;
+  hiddenCount?: number | null;
 }
 
 export interface CanvasEdge {
