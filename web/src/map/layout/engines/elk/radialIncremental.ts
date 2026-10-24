@@ -1,7 +1,6 @@
 import type { ChainNode } from '../../../model/types';
 import { nodeSize } from '../../engineOptions';
 import type { EngineOptions } from '../../engineOptions';
-import { LayoutError } from '../../types';
 import type { IncrementalLayoutRequest, PlacedNode } from '../../types';
 
 const FULL_TURN = 2 * Math.PI;
@@ -64,6 +63,45 @@ const boxesCollide = (a: Box, b: Box, gap: number): boolean =>
   b.left < a.left + a.width + gap &&
   a.top < b.top + b.height + gap &&
   b.top < a.top + a.height + gap;
+
+const sideOf = (a: Point, b: Point, c: Point): number =>
+  Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
+
+function hasCrossing(
+  order: readonly ChainNode[],
+  parents: ReadonlyMap<string, ChainNode>,
+  boxes: ReadonlyMap<string, Box>,
+  manualKeys: ReadonlySet<string>,
+): boolean {
+  const centre = (key: string): Point => {
+    const box = boxes.get(key) as Box;
+    return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+  };
+  const edges = order
+    .filter((node) => parents.has(node.keyString) && !manualKeys.has(node.keyString))
+    .map((node) => {
+      const parent = (parents.get(node.keyString) as ChainNode).keyString;
+      return { from: parent, to: node.keyString, a: centre(parent), b: centre(node.keyString) };
+    })
+    .filter((edge) => !manualKeys.has(edge.from));
+  for (let i = 0; i < edges.length; i += 1) {
+    const first = edges[i] as (typeof edges)[number];
+    for (let j = i + 1; j < edges.length; j += 1) {
+      const second = edges[j] as (typeof edges)[number];
+      if (
+        first.from !== second.from &&
+        first.to !== second.from &&
+        first.from !== second.to &&
+        first.to !== second.to &&
+        sideOf(first.a, first.b, second.a) !== sideOf(first.a, first.b, second.b) &&
+        sideOf(second.a, second.b, first.a) !== sideOf(second.a, second.b, first.b)
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 export function placeRadialIncrementally(
   request: IncrementalLayoutRequest,
@@ -343,15 +381,11 @@ export function placeRadialIncrementally(
         spot = shift.spot;
       }
     }
-    spot ??= scan(node, radius, preferred, { from: 0, to: FULL_TURN }, step);
     if (spot === null) {
-      throw new LayoutError({
-        code: 'engine-failure',
-        message: `radial ring ${String(depth)} has no free slot for ${node.keyString}`,
-      });
+      return null;
     }
     remember(node, spot.x, spot.y, true);
   }
 
-  return positions;
+  return hasCrossing(order, parents, boxes, manualKeys) ? null : positions;
 }

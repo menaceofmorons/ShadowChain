@@ -10,6 +10,7 @@ import { placeRadialIncrementally } from './radialIncremental';
 const RANDOM_SEED = '1';
 const RING_STEP_GROWTH = 1.03;
 const MAX_RING_STEP_ATTEMPTS = 200;
+// TUNE: total widening passes allowed for one full radial layout, shared across ring growth attempts.
 const MAX_WIDENINGS = 20000;
 const WIDEN_FRACTION = 0.1;
 const FULL_TURN = 2 * Math.PI;
@@ -170,10 +171,12 @@ function levelRadii(
   levelCounts: readonly number[],
   minStep: number,
   slot: number,
+  budget: { left: number },
 ): number[] {
   const steps = levelCounts.map((_, depth) => (depth === 0 ? 0 : minStep));
   let radii = cumulative(steps);
-  for (let attempt = 0; attempt < MAX_WIDENINGS; attempt += 1) {
+  while (budget.left > 0) {
+    budget.left -= 1;
     const needs = angleNeeds(root, ordered, radii, slot);
     if ((needs.get(root.keyString) as number) <= FULL_TURN) {
       break;
@@ -268,9 +271,10 @@ function placeOnLevelRings(
   };
   count(root, 0);
   let growth = 1;
+  const budget = { left: MAX_WIDENINGS };
   let boxes: Box[] = [];
   for (let attempt = 0; attempt < MAX_RING_STEP_ATTEMPTS; attempt += 1) {
-    const radii = levelRadii(root, ordered, levelCounts, minStep * growth, slot * growth);
+    const radii = levelRadii(root, ordered, levelCounts, minStep * growth, slot * growth, budget);
     const needs = angleNeeds(root, ordered, radii, slot * growth);
     boxes = levelBoxes(wedgeSlots(root, ordered, needs, options), radii);
     if (!hasOverlap(boxes, gap / 2)) {
