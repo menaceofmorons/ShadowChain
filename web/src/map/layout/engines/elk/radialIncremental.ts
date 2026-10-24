@@ -280,14 +280,28 @@ export function placeRadialIncrementally(
     readonly spot: Point;
   }
 
-  const boundaryClear = (box: Box, moving: ReadonlySet<string>, delta: number): boolean => {
+  const ringsOf = (moving: ReadonlySet<string>): string[][] => {
+    const rings = new Map<number, string[]>();
     for (const key of moving) {
-      const turned = rotatedBox(key, delta);
-      if (boxesCollide(box, turned, gap)) {
+      rings.set(depthOf(key), [...(rings.get(depthOf(key)) ?? []), key]);
+    }
+    return [...rings.values()].map((keys) => keys.sort((a, b) => angleOf(a) - angleOf(b)));
+  };
+
+  const boundaryClear = (box: Box, moving: ReadonlySet<string>, rings: readonly string[][], delta: number): boolean => {
+    for (const ring of rings) {
+      const turned = ring.map((key) => rotatedBox(key, delta));
+      if (turned.some((candidate) => boxesCollide(box, candidate, gap))) {
         return false;
       }
-      for (const peer of autoByDepth[depthOf(key)] ?? []) {
-        if (!moving.has(peer) && boxesCollide(turned, boxes.get(peer) as Box, gap)) {
+      for (let at = 1; at < turned.length; at += 1) {
+        if (boxesCollide(turned[at - 1] as Box, turned[at] as Box, gap)) {
+          return false;
+        }
+      }
+      const edges = [turned[0] as Box, turned.at(-1) as Box];
+      for (const peer of autoByDepth[depthOf(ring[0] as string)] ?? []) {
+        if (!moving.has(peer) && edges.some((edge) => boxesCollide(edge, boxes.get(peer) as Box, gap))) {
           return false;
         }
       }
@@ -313,6 +327,7 @@ export function placeRadialIncrementally(
           (forward ? angleOf(key) >= arc.to : angleOf(key) <= arc.from),
       ),
     );
+    const rings = ringsOf(moving);
     const angles = [...moving].map(angleOf);
     const headroom = forward ? FULL_TURN - Math.max(0, ...angles) : Math.min(FULL_TURN, ...angles);
     const sign = forward ? 1 : -1;
@@ -326,13 +341,69 @@ export function placeRadialIncrementally(
       }
       for (let delta = 0; delta < headroom - 1e-6; delta += step) {
         const reaches = forward ? angle < arc.to + delta : angle > arc.from - delta;
-        if (reaches && boundaryClear(box, moving, sign * delta)) {
+        if (reaches && boundaryClear(box, moving, rings, sign * delta)) {
           return { moving, delta: sign * delta, spot: { x: box.left, y: box.top } };
         }
       }
       return null;
     }
   };
+
+  const vacatedSize = (prior: PlacedNode): { width: number; height: number } => {
+    if (prior.alias) {
+      return { width: options.aliasWidth, height: options.aliasHeight };
+    }
+    return prior.hiddenCount === null
+      ? { width: options.nodeWidth, height: options.nodeHeight }
+      : { width: options.collapsedWidth, height: options.collapsedHeight };
+  };
+  const vacated = request.previous
+    .filter((prior) => removed.has(prior.nodeKey) && prior.source === 'auto' && !manualKeys.has(prior.nodeKey))
+    .map((prior) => {
+      const size = vacatedSize(prior);
+      const centre = { x: prior.x + size.width / 2, y: prior.y + size.height / 2 };
+      const radius = Math.hypot(centre.x - origin.x, centre.y - origin.y);
+      let ring = 1;
+      for (let level = 1; level < radii.length; level += 1) {
+        if (Math.abs((radii[level] as number) - radius) < Math.abs((radii[ring] as number) - radius)) {
+          ring = level;
+        }
+      }
+      return {
+        ring,
+        width: size.width,
+        angle: turnOf(centre, origin),
+        offRing: Math.abs((radii[ring] as number) - radius),
+      };
+    })
+    .filter((slot) => radii.length > 1 && slot.offRing < RING_MATCH)
+    .sort((a, b) => a.ring - b.ring || a.angle - b.angle);
+  const farAway: Box = { left: 1e9, top: 1e9, width: 1, height: 1 };
+  for (const slot of vacated) {
+    const moving = new Set(
+      [...boxes.keys()].filter(
+        (key) =>
+          !manualKeys.has(key) && key !== root.keyString && depthOf(key) >= slot.ring && angleOf(key) > slot.angle,
+      ),
+    );
+    const rings = ringsOf(moving);
+    const upper = Math.min(
+      FULL_TURN,
+      ...[...(autoByDepth[slot.ring] ?? [])].map(angleOf).filter((a) => a > slot.angle),
+    );
+    const step = (options.nodeWidth * SCAN_STEP_FRACTION) / (radii[slot.ring] as number);
+    let best = 0;
+    const footprint = (slot.width + options.siblingSpacing) / (radii[slot.ring] as number);
+    for (let delta = step; delta <= Math.min(upper - slot.angle, footprint); delta += step) {
+      if (!boundaryClear(farAway, moving, rings, -delta)) {
+        break;
+      }
+      best = delta;
+    }
+    if (best > 0) {
+      rotate(moving, -best);
+    }
+  }
 
   for (const node of added) {
     const depth = depthOf(node.keyString);

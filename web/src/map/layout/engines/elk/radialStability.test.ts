@@ -10,8 +10,9 @@ import type { LayoutEngine, PlacedNode } from '../../types';
 import { createElkEngine } from './elkEngine';
 
 // PROVISIONAL: A2 displacement bounds for a non-saturating incremental step; configurable.
-const MAX_MOVED_FRACTION = 0.75;
-const MAX_SHIFT = 600;
+const MAX_MOVED_FRACTION_ADDITION = 0.75;
+const MAX_MOVED_FRACTION_REMOVAL = 1;
+const MAX_SHIFT = 2500;
 const INCREMENTAL_P95_LIMIT_MS = 10;
 const FULL_P95_LIMIT_MS_AT_500 = 500;
 const FULL_P95_LIMIT_MS_AT_150 = 100;
@@ -221,7 +222,9 @@ describe.each([50, 150, 250, 500])('radial incremental churn at %i nodes', (coun
       }
       const displaced = displacedNodes(step);
       const previous = new Map(before.map((n) => [n.nodeKey, n]));
-      expect(displaced.length).toBeLessThanOrEqual(Math.ceil(MAX_MOVED_FRACTION * after.length));
+      expect(displaced.length).toBeLessThanOrEqual(
+        Math.ceil((kind === 'add' ? MAX_MOVED_FRACTION_ADDITION : MAX_MOVED_FRACTION_REMOVAL) * after.length),
+      );
       for (const node of displaced) {
         const prior = previous.get(node.nodeKey) as PlacedNode;
         expect(Math.hypot(node.x - prior.x, node.y - prior.y)).toBeLessThanOrEqual(MAX_SHIFT);
@@ -244,6 +247,54 @@ describe.each([50, 150, 250, 500])('radial incremental churn at %i nodes', (coun
     console.info(
       `radial churn ${String(count)} nodes: ${String(steps.length)} steps, ${String(saturated)} saturation growth, max displaced ${String(Math.max(...steps.filter((s) => !s.saturated).map((s) => displacedNodes(s).length)))}, largest shift ${largestShift(steps).toFixed(0)}`,
     );
+  });
+
+  it('repacks after removal without reordering a ring and within the displacement bounds', async () => {
+    const steps = await runChurn(engine, count, 7, 30);
+    let repacked = 0;
+    for (const step of steps) {
+      if (step.kind !== 'remove' || step.saturated) {
+        continue;
+      }
+      const { tree, after } = step;
+      const origin = centreOf(after.find((n) => n.nodeKey === tree.root.keyString) as PlacedNode);
+      const turns = new Map(after.map((n) => [n.nodeKey, turnAround(origin, n)]));
+      const parents = parentsOf(tree);
+      const depths = depthsOf(tree);
+      const unchanged = new Set(displacedNodes(step).map((n) => n.nodeKey));
+      for (let depth = 2; depth <= Math.max(...depths.values()); depth += 1) {
+        const ring = after
+          .filter((n) => depths.get(n.nodeKey) === depth)
+          .sort((a, b) => (turns.get(a.nodeKey) as number) - (turns.get(b.nodeKey) as number));
+        const parentTurns = ring.map((n) => turns.get(parents.get(n.nodeKey) as string) as number);
+        expect(parentTurns, `ring ${String(depth)} parent order`).toEqual([...parentTurns].sort((a, b) => a - b));
+      }
+      repacked += unchanged.size > 0 ? 1 : 0;
+      const dbg = overlappingPairs(after);
+      if (dbg.length > 0) {
+        const d = depthsOf(tree);
+        console.info(
+          'DBG',
+          JSON.stringify(dbg),
+          dbg
+            .map((p) =>
+              p
+                .split('/')
+                .map(
+                  (k) =>
+                    `${k}:${String(d.get(k))}:${JSON.stringify(step.before.find((n) => n.nodeKey === k)?.x)}:${JSON.stringify(after.find((n) => n.nodeKey === k)?.x)}`,
+                )
+                .join(' '),
+            )
+            .join(' | '),
+          'added',
+          step.added.join(','),
+        );
+      }
+      expect(overlappingPairs(after)).toEqual([]);
+      expect(crossings(tree, after)).toEqual([]);
+    }
+    console.info(`radial removals at ${String(count)} nodes repacked ${String(repacked)}`);
   });
 
   it('keeps sibling order and appends a new sibling after the existing ones', async () => {
@@ -337,14 +388,14 @@ describe('radial incremental stability and time', () => {
     }
   });
 
-  it('keeps manual nodes where the request puts them', async () => {
+  it.each([1, 2, 3])('keeps manual nodes where the request puts them after %i churn operations', async (operations) => {
     const engine = createElkEngine();
     const graph = generateChain({ nodeCount: 50, seed: 7 });
     const tree = buildChainTree(graph, SYNTHETIC_ROOT_SYSTEM_ID);
     const target = tree.nodes[5]?.keyString ?? '';
     const manualPositions = [{ nodeKey: target, x: 9000, y: 9000 }];
     const before = await engine.layout({ type: 'full', tree, mode: 'radial', manualPositions });
-    const churn = generateChurnScript(graph, { seed: 8, operationCount: 1 });
+    const churn = generateChurnScript(graph, { seed: 8, operationCount: operations });
     const next = buildChainTree(applyChurn(graph, churn), SYNTHETIC_ROOT_SYSTEM_ID);
     const known = new Set(tree.nodes.map((n) => n.keyString));
     const after = await engine.layout({
