@@ -1,6 +1,7 @@
 import type { ChainNode } from '../../../model/types';
-import { resolveEngineOptions } from '../../engineOptions';
+import { nodeSize, resolveEngineOptions } from '../../engineOptions';
 import type { EngineOptions } from '../../engineOptions';
+import { placementFlags } from '../../placementFlags';
 import { LayoutError } from '../../types';
 import type { LayoutEngine, LayoutMode, LayoutRequest, ManualPosition, PlacedNode } from '../../types';
 
@@ -31,8 +32,7 @@ const isAlias = (node: ChainNode): boolean => node.kind === 'alias';
 const childrenOf = (node: ChainNode): readonly ChainNode[] => (isAlias(node) ? [] : node.children);
 
 const extentOf = (node: ChainNode, mode: LayoutMode, options: EngineOptions): Extent => {
-  const width = isAlias(node) ? options.aliasWidth : options.nodeWidth;
-  const height = isAlias(node) ? options.aliasHeight : options.nodeHeight;
+  const { width, height } = nodeSize(node, options);
   return mode === 'top-down' ? { across: width, along: height } : { across: height, along: width };
 };
 
@@ -267,6 +267,7 @@ function incrementalSlots(request: LayoutRequest, options: EngineOptions): Map<s
 
 function placeNodes(request: LayoutRequest, options: EngineOptions): PlacedNode[] {
   const slots = request.type === 'full' ? freshSlots(request, options) : incrementalSlots(request, options);
+  const flags = (node: ChainNode) => placementFlags(request, node);
   const manual = new Map<string, ManualPosition>(
     request.manualPositions.map((position) => [position.nodeKey, position]),
   );
@@ -277,11 +278,9 @@ function placeNodes(request: LayoutRequest, options: EngineOptions): PlacedNode[
     }
     const override = manual.get(node.keyString);
     if (override !== undefined) {
-      return [
-        { nodeKey: node.keyString, x: override.x, y: override.y, source: 'manual' as const, alias: isAlias(node) },
-      ];
+      return [{ nodeKey: node.keyString, x: override.x, y: override.y, source: 'manual' as const, ...flags(node) }];
     }
-    return [{ nodeKey: node.keyString, ...toPoint(request.mode, slot), source: 'auto' as const, alias: isAlias(node) }];
+    return [{ nodeKey: node.keyString, ...toPoint(request.mode, slot), source: 'auto' as const, ...flags(node) }];
   });
 }
 

@@ -277,7 +277,15 @@ describe('request validation', () => {
     children,
     parentEdge,
   });
-  const placed = (key: string) => ({ nodeKey: key, x: 0, y: 0, source: 'auto', alias: false });
+  const placed = (key: string) => ({
+    nodeKey: key,
+    x: 0,
+    y: 0,
+    source: 'auto',
+    alias: false,
+    collapsed: false,
+    hiddenCount: null,
+  });
   const good = () => {
     const child = nodeOf('b');
     const root = nodeOf('a', [child], null);

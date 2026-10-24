@@ -83,6 +83,8 @@ export async function measureWanderer553(candidate: BakeoffCandidate, mode: Layo
     ...position,
     source: 'auto',
     alias: false,
+    collapsed: false,
+    hiddenCount: null,
   }));
   const outcome = await candidate.createEngine().layout({
     type: 'incremental',

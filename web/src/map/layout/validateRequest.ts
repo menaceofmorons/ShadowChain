@@ -36,6 +36,23 @@ const requirePlacements = (value: unknown, name: string, withSource: boolean): v
   }
 };
 
+const requireReachable = (tree: Record<string, unknown>, keys: Set<string>): void => {
+  const byKey = new Map(
+    (tree['nodes'] as { keyString: string; children: { keyString: string }[] }[]).map((node) => [node.keyString, node]),
+  );
+  const seen = new Set<string>();
+  const stack = [(tree['root'] as { keyString: string }).keyString];
+  for (let key = stack.pop(); key !== undefined; key = stack.pop()) {
+    if (!seen.has(key)) {
+      seen.add(key);
+      stack.push(...(byKey.get(key)?.children.map((child) => child.keyString) ?? []));
+    }
+  }
+  if (seen.size !== keys.size) {
+    fail('tree nodes must all be reachable from the root');
+  }
+};
+
 const requireUnique = (keys: readonly string[], name: string): Set<string> => {
   const set = new Set(keys);
   if (set.size !== keys.length) {
@@ -51,7 +68,12 @@ const requireConsistentTree = (tree: Record<string, unknown>): Set<string> => {
   ) {
     fail('tree nodes need a keyString and children');
   }
-  const typed = nodes as { keyString: string; children: { keyString?: unknown }[]; parentEdge?: unknown }[];
+  const typed = nodes as {
+    keyString: string;
+    children: { keyString?: unknown }[];
+    parentEdge?: unknown;
+    kind?: unknown;
+  }[];
   const keys = requireUnique(
     typed.map((node) => node.keyString),
     'tree nodes',
@@ -67,10 +89,13 @@ const requireConsistentTree = (tree: Record<string, unknown>): Set<string> => {
       }
     }
   }
-  const roots = typed.filter((node) => node.parentEdge === null || node.parentEdge === undefined);
+  const roots = typed.filter(
+    (node) => (node.parentEdge === null || node.parentEdge === undefined) && node.kind !== 'collapsed',
+  );
   if (roots.length !== 1 || roots[0]?.keyString !== root['keyString']) {
     fail('tree must have exactly one root');
   }
+  requireReachable(tree, keys);
   return keys;
 };
 
@@ -111,6 +136,15 @@ export function validateRequest(value: unknown): LayoutRequest {
     fail('request tree must have a root and nodes');
   }
   requirePlacements(value['manualPositions'], 'manualPositions', false);
+  if (value['collapsedKeys'] !== undefined) {
+    requireStringArray(value['collapsedKeys'], 'collapsedKeys');
+  }
+  if (
+    value['rootOffset'] !== undefined &&
+    (typeof value['rootOffset'] !== 'number' || !Number.isFinite(value['rootOffset']))
+  ) {
+    fail('rootOffset must be a finite number');
+  }
   if (value['type'] === 'incremental') {
     requirePlacements(value['previous'], 'previous', true);
     requireStringArray(value['addedNodeKeys'], 'addedNodeKeys');
@@ -124,6 +158,11 @@ export function validateRequest(value: unknown): LayoutRequest {
   for (const key of manual) {
     if (!treeKeys.has(key)) {
       fail('manualPositions must reference tree nodes');
+    }
+  }
+  for (const key of (value['collapsedKeys'] ?? []) as string[]) {
+    if (!treeKeys.has(key)) {
+      fail('collapsedKeys must reference tree nodes');
     }
   }
   if (value['type'] === 'incremental') {

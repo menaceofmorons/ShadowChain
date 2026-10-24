@@ -10,7 +10,10 @@ const isPlacedNode = (value: unknown): value is PlacedNode =>
   typeof value['y'] === 'number' &&
   Number.isFinite(value['y']) &&
   (value['source'] === 'auto' || value['source'] === 'manual') &&
-  typeof value['alias'] === 'boolean';
+  typeof value['alias'] === 'boolean' &&
+  typeof value['collapsed'] === 'boolean' &&
+  (value['hiddenCount'] === null ||
+    (typeof value['hiddenCount'] === 'number' && Number.isInteger(value['hiddenCount'])));
 
 const isErrorInfo = (value: unknown): value is LayoutErrorInfo =>
   isRecord(value) &&

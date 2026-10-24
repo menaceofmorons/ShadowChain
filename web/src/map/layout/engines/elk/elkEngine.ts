@@ -1,8 +1,9 @@
 import ELK from 'elkjs/lib/elk.bundled.js';
 import type { ElkNode, LayoutOptions } from 'elkjs/lib/elk-api';
 import type { ChainNode } from '../../../model/types';
-import { resolveEngineOptions } from '../../engineOptions';
+import { nodeSize, resolveEngineOptions } from '../../engineOptions';
 import type { EngineOptions } from '../../engineOptions';
+import { placementFlags } from '../../placementFlags';
 import type { LayoutEngine, LayoutMode, LayoutRequest, PlacedNode } from '../../types';
 
 const RANDOM_SEED = '1';
@@ -47,12 +48,7 @@ function toElkGraph(request: LayoutRequest, options: EngineOptions, radialRadius
   const children: ElkNode[] = [];
   const edges: { id: string; sources: string[]; targets: string[] }[] = [];
   const visit = (node: ChainNode): void => {
-    const alias = node.kind === 'alias';
-    children.push({
-      id: node.keyString,
-      width: alias ? options.aliasWidth : options.nodeWidth,
-      height: alias ? options.aliasHeight : options.nodeHeight,
-    });
+    children.push({ id: node.keyString, ...nodeSize(node, options) });
     for (const child of node.children) {
       edges.push({ id: `${node.keyString}>${child.keyString}`, sources: [node.keyString], targets: [child.keyString] });
       visit(child);
@@ -207,11 +203,9 @@ function wedgeSlots(
 ): Slot[][] {
   const levels: Slot[][] = [];
   const visit = (node: ChainNode, depth: number, start: number, end: number): void => {
-    const alias = node.kind === 'alias';
     (levels[depth] ??= []).push({
       id: node.keyString,
-      width: alias ? options.aliasWidth : options.nodeWidth,
-      height: alias ? options.aliasHeight : options.nodeHeight,
+      ...nodeSize(node, options),
       angle: depth === 0 ? 0 : (start + end) / 2,
     });
     const children = ordered.get(node.keyString) ?? [];
@@ -310,7 +304,7 @@ export function createElkEngine(overrides: Partial<EngineOptions> = {}): LayoutE
         request.mode === 'radial'
           ? { ...arranged, children: placeOnLevelRings(request.tree.root, arranged, options) }
           : arranged;
-      const aliasByKey = new Map(request.tree.nodes.map((node) => [node.keyString, node.kind === 'alias']));
+      const nodeByKey = new Map(request.tree.nodes.map((node) => [node.keyString, node]));
       const placed = new Map<string, PlacedNode>();
       for (const child of laidOut.children ?? []) {
         placed.set(child.id, {
@@ -318,7 +312,7 @@ export function createElkEngine(overrides: Partial<EngineOptions> = {}): LayoutE
           x: child.x ?? 0,
           y: child.y ?? 0,
           source: 'auto',
-          alias: aliasByKey.get(child.id) ?? false,
+          ...placementFlags(request, nodeByKey.get(child.id)),
         });
       }
       applyManual(placed, request);

@@ -1,4 +1,5 @@
 import type { ChainNode } from '../../model/types';
+import { placementFlags } from '../placementFlags';
 import type { LayoutEngine, LayoutMode, LayoutRequest, PlacedNode } from '../types';
 
 const SPACING = 100;
@@ -33,7 +34,7 @@ function autoPlacements(request: LayoutRequest, offset: number): Map<string, Pla
       nodeKey: node.keyString,
       ...place(request.mode, depth, index, offset),
       source: 'auto',
-      alias: node.kind === 'alias',
+      ...placementFlags(request, node),
     });
     node.children.forEach((child) => {
       visit(child, depth + 1);
@@ -54,7 +55,12 @@ export function createStubEngine(options: StubEngineOptions = {}): LayoutEngine 
         for (const prior of request.previous) {
           const current = auto.get(prior.nodeKey);
           if (current !== undefined && !removed.has(prior.nodeKey)) {
-            result.set(prior.nodeKey, { ...prior, alias: current.alias });
+            result.set(prior.nodeKey, {
+              ...prior,
+              alias: current.alias,
+              collapsed: current.collapsed,
+              hiddenCount: current.hiddenCount,
+            });
           }
         }
       }

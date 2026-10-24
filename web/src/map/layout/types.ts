@@ -18,6 +18,8 @@ export interface PlacedNode {
   readonly y: number;
   readonly source: PositionSource;
   readonly alias: boolean;
+  readonly collapsed: boolean;
+  readonly hiddenCount: number | null;
 }
 
 export interface FullLayoutRequest {
@@ -25,6 +27,8 @@ export interface FullLayoutRequest {
   readonly tree: ChainTree;
   readonly mode: LayoutMode;
   readonly manualPositions: readonly ManualPosition[];
+  readonly collapsedKeys?: readonly string[];
+  readonly rootOffset?: number;
 }
 
 export interface IncrementalLayoutRequest {
@@ -32,6 +36,8 @@ export interface IncrementalLayoutRequest {
   readonly tree: ChainTree;
   readonly mode: LayoutMode;
   readonly manualPositions: readonly ManualPosition[];
+  readonly collapsedKeys?: readonly string[];
+  readonly rootOffset?: number;
   readonly previous: readonly PlacedNode[];
   readonly addedNodeKeys: readonly string[];
   readonly removedNodeKeys: readonly string[];

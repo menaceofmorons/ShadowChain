@@ -17,10 +17,23 @@ export function createRegistryAdapter(registry: EngineRegistry = DEFAULT_ENGINE_
       let running = workers.get(entry.id);
       if (running === undefined) {
         const worker = entry.createWorker();
-        running = {
+        const endpoint = endpointFromWorker<LayoutRequestMessage, LayoutResponseMessage>(worker);
+        const created = {
           worker,
-          adapter: createLayoutAdapter(endpointFromWorker<LayoutRequestMessage, LayoutResponseMessage>(worker)),
+          adapter: createLayoutAdapter({
+            ...endpoint,
+            onError: (handler) => {
+              endpoint.onError((reason) => {
+                if (workers.get(entry.id) === created) {
+                  workers.delete(entry.id);
+                }
+                worker.terminate();
+                handler(reason);
+              });
+            },
+          }),
         };
+        running = created;
         workers.set(entry.id, running);
       }
       return await running.adapter.layout(request);
