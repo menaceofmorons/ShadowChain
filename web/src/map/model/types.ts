@@ -16,7 +16,7 @@ export interface ChainGraph {
   readonly connections: readonly ChainConnection[];
 }
 
-export type ChainNodeKind = 'primary' | 'alias' | 'unknownEnd';
+export type ChainNodeKind = 'primary' | 'alias' | 'unknownEnd' | 'collapsed';
 
 export interface ChainEdge {
   readonly connectionId: ConnectionId;
@@ -29,6 +29,7 @@ export interface ChainNode {
   readonly kind: ChainNodeKind;
   readonly systemId: SystemId | null;
   readonly parentEdge: ChainEdge | null;
+  readonly hiddenCount: number | null;
   readonly children: readonly ChainNode[];
 }
 

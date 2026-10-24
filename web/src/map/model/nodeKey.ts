@@ -1,20 +1,24 @@
 export type SystemId = number;
 export type ConnectionId = number;
 
-export type NodeKey =
+export type PersistedNodeKey =
   | { readonly kind: 'system'; readonly systemId: SystemId }
   | { readonly kind: 'alias'; readonly systemId: SystemId; readonly connectionId: ConnectionId }
   | { readonly kind: 'unknownEnd'; readonly connectionId: ConnectionId };
 
-export const systemKey = (systemId: SystemId): NodeKey => ({ kind: 'system', systemId });
+export type NodeKey = PersistedNodeKey | { readonly kind: 'collapsed'; readonly target: PersistedNodeKey };
 
-export const aliasKey = (systemId: SystemId, connectionId: ConnectionId): NodeKey => ({
+export const collapsedKey = (target: PersistedNodeKey): NodeKey => ({ kind: 'collapsed', target });
+
+export const systemKey = (systemId: SystemId): PersistedNodeKey => ({ kind: 'system', systemId });
+
+export const aliasKey = (systemId: SystemId, connectionId: ConnectionId): PersistedNodeKey => ({
   kind: 'alias',
   systemId,
   connectionId,
 });
 
-export const unknownEndKey = (connectionId: ConnectionId): NodeKey => ({
+export const unknownEndKey = (connectionId: ConnectionId): PersistedNodeKey => ({
   kind: 'unknownEnd',
   connectionId,
 });
@@ -27,12 +31,21 @@ export function serialiseNodeKey(key: NodeKey): string {
       return `a:${key.systemId}:${key.connectionId}`;
     case 'unknownEnd':
       return `u:${key.connectionId}`;
+    case 'collapsed':
+      return `+:${serialiseNodeKey(key.target)}`;
   }
 }
 
 const KEY_PATTERN = /^(?:s:(\d+)|a:(\d+):(\d+)|u:(\d+))$/;
 
 export function parseNodeKey(text: string): NodeKey {
+  if (text.startsWith('+:')) {
+    const target = parseNodeKey(text.slice(2));
+    if (target.kind === 'collapsed') {
+      throw new Error(`Invalid node key: ${text}`);
+    }
+    return collapsedKey(target);
+  }
   const match = KEY_PATTERN.exec(text);
   if (match === null) {
     throw new Error(`Invalid node key: ${text}`);

@@ -1,6 +1,12 @@
 export { buildChainTree } from './model/chainTree';
-export { aliasKey, parseNodeKey, serialiseNodeKey, systemKey, unknownEndKey } from './model/nodeKey';
-export type { ConnectionId, NodeKey, SystemId } from './model/nodeKey';
+export {
+  collapseChainTree,
+  disconnectedSystemIds,
+  removeConnectionFromTree,
+  removeConnections,
+} from './model/chainOps';
+export { aliasKey, collapsedKey, parseNodeKey, serialiseNodeKey, systemKey, unknownEndKey } from './model/nodeKey';
+export type { ConnectionId, NodeKey, PersistedNodeKey, SystemId } from './model/nodeKey';
 export type {
   ChainConnection,
   ChainEdge,

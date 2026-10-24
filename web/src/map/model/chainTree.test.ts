@@ -111,7 +111,7 @@ describe('buildChainTree', () => {
   it('contains no layout, position or style fields', () => {
     const tree = build([1, 2], [conn(10, 1, 1, 2)]);
     expect(Object.keys(tree.root).sort()).toEqual(
-      ['children', 'key', 'keyString', 'kind', 'parentEdge', 'systemId'].sort(),
+      ['children', 'hiddenCount', 'key', 'keyString', 'kind', 'parentEdge', 'systemId'].sort(),
     );
   });
 

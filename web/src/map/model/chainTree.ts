@@ -34,6 +34,7 @@ function freeze(node: MutableNode): ChainNode {
     kind: node.kind,
     systemId: node.systemId,
     parentEdge: node.parentEdge,
+    hiddenCount: null,
     children: node.children.map(freeze),
   };
 }
