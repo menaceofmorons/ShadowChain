@@ -338,6 +338,7 @@ describe('elk engine sources', () => {
         specifier.startsWith('elkjs/') ||
         specifier === './elkEngine' ||
         specifier === './radialIncremental' ||
+        specifier === './radialRelativeSubtrees' ||
         /^\.\.\/\.\.\/(?!.*canvas)/.test(specifier) ||
         /^\.\.\/\.\.\/\.\.\/model\//.test(specifier);
       expect(allowed, specifier).toBe(true);

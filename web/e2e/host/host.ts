@@ -11,6 +11,8 @@ import type {
 import { LAYOUT_MODES } from '../../src/map/layout/types';
 import { runHarness } from '../../src/map/harness/metricsHarness';
 import type { HarnessReport } from '../../src/map/harness/metricsHarness';
+import { buildChainTree } from '../../src/map/model/chainTree';
+import { collapseChainTree } from '../../src/map/model/chainOps';
 import { generateChain, generateChurnScript, SYNTHETIC_ROOT_SYSTEM_ID } from '../../src/map/synthetic';
 import { isEngineName } from './engines';
 import { createRegistryAdapter } from '../../src/map/layout/engines/registryAdapter';
@@ -20,6 +22,8 @@ import type { CandidateName } from './candidates';
 export interface HostResult {
   readonly report: HarnessReport;
   readonly finalPlaced: readonly PlacedNode[];
+  readonly collapsedPlaced: readonly PlacedNode[];
+  readonly collapsedHiddenTotal: number;
 }
 
 export interface HostState {
@@ -139,8 +143,22 @@ async function run(): Promise<HostResult> {
     mode,
     fullRepeats,
   });
+  const fullTree = buildChainTree(graph, SYNTHETIC_ROOT_SYSTEM_ID);
+  const branchRoot = fullTree.nodes.find(
+    (node) => node.keyString !== fullTree.root.keyString && node.kind === 'primary' && node.children.length >= 2,
+  );
+  const collapseKeys = branchRoot === undefined ? [] : [branchRoot.keyString];
+  const collapsedTree = collapseChainTree(fullTree, new Set(collapseKeys));
+  const collapsedPlaced = await adapter.layout({
+    type: 'full',
+    tree: collapsedTree,
+    mode,
+    manualPositions: [],
+    collapsedKeys: collapseKeys,
+  });
+  const collapsedHiddenTotal = fullTree.nodes.length - collapsedTree.nodes.length + (collapseKeys.length > 0 ? 1 : 0);
   adapter.dispose();
-  return { report, finalPlaced };
+  return { report, finalPlaced, collapsedPlaced, collapsedHiddenTotal };
 }
 
 run()

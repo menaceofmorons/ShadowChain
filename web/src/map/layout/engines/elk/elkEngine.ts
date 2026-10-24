@@ -6,6 +6,7 @@ import type { EngineOptions } from '../../engineOptions';
 import { placementFlags } from '../../placementFlags';
 import type { LayoutEngine, LayoutMode, LayoutRequest, PlacedNode } from '../../types';
 import { placeRadialIncrementally } from './radialIncremental';
+import { carryRadialSubtrees } from './radialRelativeSubtrees';
 
 const RANDOM_SEED = '1';
 const RING_STEP_GROWTH = 1.03;
@@ -288,6 +289,19 @@ function placeOnLevelRings(
 }
 
 function applyManual(placed: Map<string, PlacedNode>, request: LayoutRequest): void {
+  if (request.mode === 'radial') {
+    const carried = carryRadialSubtrees(request.tree.root, placed, request.manualPositions);
+    const manualKeys = new Set(request.manualPositions.map((position) => position.nodeKey));
+    for (const [key, spot] of carried) {
+      const node = placed.get(key) as PlacedNode;
+      if (manualKeys.has(key)) {
+        placed.set(key, { ...node, x: spot.x, y: spot.y, source: 'manual' });
+      } else {
+        placed.set(key, { ...node, x: toHundredths(spot.x), y: toHundredths(spot.y) });
+      }
+    }
+    return;
+  }
   for (const manual of request.manualPositions) {
     const node = placed.get(manual.nodeKey);
     if (node !== undefined) {
@@ -296,17 +310,76 @@ function applyManual(placed: Map<string, PlacedNode>, request: LayoutRequest): v
   }
 }
 
+const overlapsAny = (
+  request: LayoutRequest,
+  placed: ReadonlyMap<string, PlacedNode>,
+  keys: ReadonlySet<string>,
+  options: EngineOptions,
+): boolean => {
+  const nodeByKey = new Map(request.tree.nodes.map((node) => [node.keyString, node]));
+  const boxOf = (key: string): Box => {
+    const node = placed.get(key) as PlacedNode;
+    const size = nodeSize(nodeByKey.get(key) as ChainNode, options);
+    return { id: key, left: node.x, top: node.y, ...size };
+  };
+  const others = [...placed.keys()].map(boxOf);
+  return [...keys].some((key) => {
+    const box = boxOf(key);
+    return others.some(
+      (other) =>
+        other.id !== key &&
+        box.left < other.left + other.width &&
+        other.left < box.left + box.width &&
+        box.top < other.top + other.height &&
+        other.top < box.top + box.height,
+    );
+  });
+};
+
 export function createElkEngine(overrides: Partial<EngineOptions> = {}): LayoutEngine {
   const options = resolveEngineOptions(overrides);
   const elk = new ELK();
+
+  const freshLayout = async (request: LayoutRequest): Promise<Map<string, PlacedNode>> => {
+    const radius = initialRadialRadius(request.tree.nodes.length, options);
+    const arranged = await elk.layout(toElkGraph(request, options, radius));
+    const laidOut: ElkNode =
+      request.mode === 'radial'
+        ? { ...arranged, children: placeOnLevelRings(request.tree.root, arranged, options) }
+        : arranged;
+    const nodeByKey = new Map(request.tree.nodes.map((node) => [node.keyString, node]));
+    const placed = new Map<string, PlacedNode>();
+    for (const child of laidOut.children ?? []) {
+      placed.set(child.id, {
+        nodeKey: child.id,
+        x: child.x ?? 0,
+        y: child.y ?? 0,
+        source: 'auto',
+        ...placementFlags(request, nodeByKey.get(child.id)),
+      });
+    }
+    return placed;
+  };
+
+  const fullLayout = async (request: LayoutRequest): Promise<readonly PlacedNode[]> => {
+    const placed = await freshLayout(request);
+    applyManual(placed, request);
+    return [...placed.values()];
+  };
+
   return {
     async layout(request) {
       if (request.type === 'incremental' && request.mode === 'radial') {
         const spots = placeRadialIncrementally(request, options);
         if (spots !== null) {
           const placed = new Map<string, PlacedNode>();
+          const deferred = new Set<string>();
           for (const node of request.tree.nodes) {
-            const spot = spots.get(node.keyString) as { x: number; y: number };
+            const spot = spots.get(node.keyString);
+            if (spot === undefined) {
+              deferred.add(node.keyString);
+              continue;
+            }
             placed.set(node.keyString, {
               nodeKey: node.keyString,
               x: spot.x,
@@ -316,28 +389,21 @@ export function createElkEngine(overrides: Partial<EngineOptions> = {}): LayoutE
             });
           }
           applyManual(placed, request);
-          return [...placed.values()];
+          if (deferred.size === 0) {
+            return [...placed.values()];
+          }
+          const fresh = await freshLayout(request);
+          const carried = carryRadialSubtrees(request.tree.root, fresh, request.manualPositions);
+          for (const key of deferred) {
+            const spot = carried.get(key) as { x: number; y: number };
+            placed.set(key, { ...(fresh.get(key) as PlacedNode), x: toHundredths(spot.x), y: toHundredths(spot.y) });
+          }
+          if (!overlapsAny(request, placed, deferred, options)) {
+            return request.tree.nodes.map((node) => placed.get(node.keyString) as PlacedNode);
+          }
         }
       }
-      const radius = initialRadialRadius(request.tree.nodes.length, options);
-      const arranged = await elk.layout(toElkGraph(request, options, radius));
-      const laidOut: ElkNode =
-        request.mode === 'radial'
-          ? { ...arranged, children: placeOnLevelRings(request.tree.root, arranged, options) }
-          : arranged;
-      const nodeByKey = new Map(request.tree.nodes.map((node) => [node.keyString, node]));
-      const placed = new Map<string, PlacedNode>();
-      for (const child of laidOut.children ?? []) {
-        placed.set(child.id, {
-          nodeKey: child.id,
-          x: child.x ?? 0,
-          y: child.y ?? 0,
-          source: 'auto',
-          ...placementFlags(request, nodeByKey.get(child.id)),
-        });
-      }
-      applyManual(placed, request);
-      return [...placed.values()];
+      return fullLayout(request);
     },
   };
 }

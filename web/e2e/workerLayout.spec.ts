@@ -27,10 +27,15 @@ async function runHost(page: Page, mode: LayoutMode): Promise<HostResult> {
   return state.result;
 }
 
-const sizeOf = (node: PlacedNode): { width: number; height: number } =>
-  node.alias
-    ? { width: DEFAULT_ENGINE_OPTIONS.aliasWidth, height: DEFAULT_ENGINE_OPTIONS.aliasHeight }
-    : { width: DEFAULT_ENGINE_OPTIONS.nodeWidth, height: DEFAULT_ENGINE_OPTIONS.nodeHeight };
+const sizeOf = (node: PlacedNode): { width: number; height: number } => {
+  if (node.alias) {
+    return { width: DEFAULT_ENGINE_OPTIONS.aliasWidth, height: DEFAULT_ENGINE_OPTIONS.aliasHeight };
+  }
+  if (node.hiddenCount !== null) {
+    return { width: DEFAULT_ENGINE_OPTIONS.collapsedWidth, height: DEFAULT_ENGINE_OPTIONS.collapsedHeight };
+  }
+  return { width: DEFAULT_ENGINE_OPTIONS.nodeWidth, height: DEFAULT_ENGINE_OPTIONS.nodeHeight };
+};
 
 const overlappingPairs = (nodes: readonly PlacedNode[]): string[] => {
   const pairs: string[] = [];
@@ -62,6 +67,13 @@ test.describe('registry engines in a real worker', () => {
 
       expect(first.finalPlaced.length).toBeGreaterThan(100);
       expect(overlappingPairs(first.finalPlaced)).toEqual([]);
+
+      const leaves = first.collapsedPlaced.filter((node) => node.hiddenCount !== null);
+      expect(leaves).toHaveLength(1);
+      expect(leaves[0]?.hiddenCount).toBe(first.collapsedHiddenTotal);
+      expect(first.collapsedPlaced.filter((node) => node.collapsed)).toHaveLength(1);
+      expect(overlappingPairs(first.collapsedPlaced)).toEqual([]);
+      expect(byKey(second.collapsedPlaced)).toEqual(byKey(first.collapsedPlaced));
       expect(byKey(second.finalPlaced)).toEqual(byKey(first.finalPlaced));
 
       const { fullLayoutMs, additionLayoutMs } = first.report;
