@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ReactFlowProvider, useReactFlow, useStoreApi } from '@xyflow/react';
+import { ReactFlowProvider, useReactFlow, useStoreApi, ViewportPortal } from '@xyflow/react';
 import {
   buildChainTree,
   collapseChainTree,
@@ -15,6 +15,7 @@ import {
   type ChainNode,
   type LayoutMode,
 } from '../../src/map';
+import { DEFAULT_ENGINE_OPTIONS, nodeSize } from '../../src/map/layout/engineOptions';
 
 export interface CanvasHostState {
   done: boolean;
@@ -25,6 +26,7 @@ export interface CanvasHostState {
   expectedNodeCount: number;
   edgeCount: number;
   collapsedCount: number;
+  ringGuides: number;
 }
 
 declare global {
@@ -50,11 +52,40 @@ window.__canvas = {
   expectedNodeCount: 0,
   edgeCount: 0,
   collapsedCount: 0,
+  ringGuides: 0,
 };
+
+interface RingGuide {
+  readonly radius: number;
+}
 
 interface Scene {
   readonly nodes: readonly CanvasNode[];
   readonly edges: readonly CanvasEdge[];
+  readonly centre: { readonly x: number; readonly y: number };
+  readonly guides: readonly RingGuide[];
+}
+
+function ringGuides(root: ChainNode, nodes: readonly CanvasNode[]): Pick<Scene, 'centre' | 'guides'> {
+  const byKey = new Map(nodes.map((node) => [node.key, node]));
+  const centreOf = (node: ChainNode) => {
+    const placed = byKey.get(node.keyString) as CanvasNode;
+    const size = nodeSize(node, DEFAULT_ENGINE_OPTIONS);
+    return { x: placed.x + size.width / 2, y: placed.y + size.height / 2 };
+  };
+  const centre = centreOf(root);
+  const sums: { total: number; count: number }[] = [];
+  const visit = (node: ChainNode, depth: number): void => {
+    const point = centreOf(node);
+    const sum = (sums[depth] ??= { total: 0, count: 0 });
+    sum.total += Math.hypot(point.x - centre.x, point.y - centre.y);
+    sum.count += 1;
+    node.children.forEach((child) => {
+      visit(child, depth + 1);
+    });
+  };
+  visit(root, 0);
+  return { centre, guides: sums.slice(1).map((sum) => ({ radius: sum.total / sum.count })) };
 }
 
 function collectEdges(root: ChainNode): CanvasEdge[] {
@@ -98,10 +129,16 @@ async function buildScene(): Promise<Scene> {
     window.__canvas.expectedNodeCount = tree.nodes.length;
     window.__canvas.collapsedCount = collapsedKeys.length;
     const placed = await adapter.layout({ type: 'full', tree, mode, manualPositions: [], collapsedKeys });
-    return {
-      nodes: placed.map((p) => ({ key: p.nodeKey, x: p.x, y: p.y, isAlias: p.alias, hiddenCount: p.hiddenCount })),
-      edges: collectEdges(tree.root),
-    };
+    const nodes = placed.map((p) => ({
+      key: p.nodeKey,
+      x: p.x,
+      y: p.y,
+      isAlias: p.alias,
+      hiddenCount: p.hiddenCount,
+      isRoot: p.nodeKey === tree.root.keyString,
+    }));
+    const rings = mode === 'radial' ? ringGuides(tree.root, nodes) : { centre: { x: 0, y: 0 }, guides: [] };
+    return { nodes, edges: collectEdges(tree.root), ...rings };
   } finally {
     adapter.dispose();
   }
@@ -119,6 +156,7 @@ function FitOnChange({ scene }: { scene: Scene | null }) {
       void fitView({ padding: 0.05 }).then(() => {
         window.__canvas.nodeCount = document.querySelectorAll('.react-flow__node').length;
         window.__canvas.edgeCount = document.querySelectorAll('.react-flow__edge').length;
+        window.__canvas.ringGuides = document.querySelectorAll('[data-ring-guide]').length;
         window.__canvas.done = true;
       });
     });
@@ -162,7 +200,27 @@ function Host() {
             mode={mode}
             onNodeSelect={() => undefined}
             onNodesMoved={() => undefined}
-          />
+          >
+            <ViewportPortal>
+              {scene?.guides.map((guide, index) => (
+                <div
+                  key={index}
+                  data-ring-guide={index + 1}
+                  style={{
+                    position: 'absolute',
+                    left: scene.centre.x - guide.radius,
+                    top: scene.centre.y - guide.radius,
+                    width: 2 * guide.radius,
+                    height: 2 * guide.radius,
+                    boxSizing: 'border-box',
+                    border: '2px dashed #9aa5b1',
+                    borderRadius: '50%',
+                    pointerEvents: 'none',
+                  }}
+                />
+              ))}
+            </ViewportPortal>
+          </ReactFlowCanvas>
           <FitOnChange scene={scene} />
         </ReactFlowProvider>
       </div>

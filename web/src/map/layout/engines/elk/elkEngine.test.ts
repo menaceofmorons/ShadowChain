@@ -16,6 +16,7 @@ import type { LayoutMode, LayoutRequestMessage, LayoutResponseMessage, PlacedNod
 import { LAYOUT_MODES } from '../../types';
 import { bindEngineToWorker } from '../../workerBootstrap';
 import { createElkEngine } from './elkEngine';
+import { RADIAL_MAX_EXTENT_AT_150 } from './radialLegibility';
 
 const treeOf = (nodeCount: number, seed = 7): ChainTree =>
   buildChainTree(generateChain({ nodeCount, seed }), SYNTHETIC_ROOT_SYSTEM_ID);
@@ -305,7 +306,7 @@ describe('elk engine mode shapes', () => {
     const placed = await engine.layout(full(treeOf(150), 'radial'));
     const extent = (axis: 'x' | 'y') =>
       Math.max(...placed.map((n) => n[axis])) - Math.min(...placed.map((n) => n[axis]));
-    expect(Math.max(extent('x'), extent('y'))).toBeLessThan(8000);
+    expect(Math.max(extent('x'), extent('y'))).toBeLessThanOrEqual(RADIAL_MAX_EXTENT_AT_150);
   });
 });
 
@@ -338,6 +339,7 @@ describe('elk engine sources', () => {
         specifier.startsWith('elkjs/') ||
         specifier === './elkEngine' ||
         specifier === './radialIncremental' ||
+        specifier === './radialLegibility' ||
         specifier === './radialRelativeSubtrees' ||
         /^\.\.\/\.\.\/(?!.*canvas)/.test(specifier) ||
         /^\.\.\/\.\.\/\.\.\/model\//.test(specifier);

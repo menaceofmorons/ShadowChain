@@ -11,6 +11,7 @@ interface BoxData extends Record<string, unknown> {
   width: number;
   height: number;
   mode: LayoutMode;
+  isRoot: boolean;
 }
 
 type BoxNode = Node<BoxData, 'box'>;
@@ -50,10 +51,10 @@ function Box({ data }: NodeProps<BoxNode>) {
         width: data.width,
         height: data.height,
         boxSizing: 'border-box',
-        border: '1px solid #1a192b',
-        borderRadius: 3,
-        background: '#fff',
-        font: '12px sans-serif',
+        border: data.isRoot ? '3px solid #c0392b' : '1px solid #1a192b',
+        borderRadius: data.isRoot ? 24 : 3,
+        background: data.isRoot ? '#ffe9e6' : '#fff',
+        font: data.isRoot ? 'bold 12px sans-serif' : '12px sans-serif',
         color: '#222',
         display: 'flex',
         alignItems: 'center',
@@ -75,7 +76,14 @@ export function movedNodes(dragged: readonly Pick<Node, 'id' | 'position'>[]): {
   return dragged.map((n) => ({ key: n.id, x: n.position.x, y: n.position.y }));
 }
 
-export function ReactFlowCanvas({ nodes, edges, mode = 'top-down', onNodeSelect, onNodesMoved }: CanvasAdapterProps) {
+export function ReactFlowCanvas({
+  nodes,
+  edges,
+  mode = 'top-down',
+  children,
+  onNodeSelect,
+  onNodesMoved,
+}: CanvasAdapterProps) {
   const flowNodes = useMemo<BoxNode[]>(
     () =>
       nodes.map((n) => {
@@ -92,7 +100,13 @@ export function ReactFlowCanvas({ nodes, edges, mode = 'top-down', onNodeSelect,
           id: n.key,
           type: 'box',
           position: { x: n.x, y: n.y },
-          data: { label: collapsed ? `+${String(n.hiddenCount)}` : n.key, width, height, mode },
+          data: {
+            label: collapsed ? `+${String(n.hiddenCount)}` : n.key,
+            width,
+            height,
+            mode,
+            isRoot: n.isRoot === true,
+          },
           initialWidth: width,
           initialHeight: height,
           handles: [
@@ -122,6 +136,8 @@ export function ReactFlowCanvas({ nodes, edges, mode = 'top-down', onNodeSelect,
       onlyRenderVisibleElements={false}
       onNodeClick={(_, node) => onNodeSelect(node.id)}
       onNodeDragStop={(_, _node, dragged) => onNodesMoved(movedNodes(dragged))}
-    />
+    >
+      {children}
+    </ReactFlow>
   );
 }

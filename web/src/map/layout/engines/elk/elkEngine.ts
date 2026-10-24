@@ -6,6 +6,7 @@ import type { EngineOptions } from '../../engineOptions';
 import { placementFlags } from '../../placementFlags';
 import type { LayoutEngine, LayoutMode, LayoutRequest, PlacedNode } from '../../types';
 import { placeRadialIncrementally } from './radialIncremental';
+import { RADIAL_MAX_GAP_RATIO, smoothRingRadii } from './radialLegibility';
 import { carryRadialSubtrees } from './radialRelativeSubtrees';
 
 const RANDOM_SEED = '1';
@@ -275,7 +276,11 @@ function placeOnLevelRings(
   const budget = { left: MAX_WIDENINGS };
   let boxes: Box[] = [];
   for (let attempt = 0; attempt < MAX_RING_STEP_ATTEMPTS; attempt += 1) {
-    const radii = levelRadii(root, ordered, levelCounts, minStep * growth, slot * growth, budget);
+    const radii = smoothRingRadii(
+      levelRadii(root, ordered, levelCounts, minStep * growth, slot * growth, budget),
+      minStep * growth,
+      RADIAL_MAX_GAP_RATIO,
+    );
     const needs = angleNeeds(root, ordered, radii, slot * growth);
     boxes = levelBoxes(wedgeSlots(root, ordered, needs, options), radii);
     if (!hasOverlap(boxes, gap / 2)) {

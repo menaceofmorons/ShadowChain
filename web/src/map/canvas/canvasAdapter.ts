@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { LayoutMode } from '../layout/types';
 
 export interface CanvasNode {
@@ -6,6 +7,7 @@ export interface CanvasNode {
   y: number;
   isAlias: boolean;
   hiddenCount?: number | null;
+  isRoot?: boolean;
 }
 
 export interface CanvasEdge {
@@ -24,6 +26,7 @@ export interface CanvasAdapterProps {
   nodes: readonly CanvasNode[];
   edges: readonly CanvasEdge[];
   mode?: LayoutMode;
+  children?: ReactNode;
   onNodeSelect: (key: string) => void;
   onNodesMoved: (moved: readonly MovedNode[]) => void;
 }
