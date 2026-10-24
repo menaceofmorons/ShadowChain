@@ -100,6 +100,15 @@ class Placement {
     return nodes.map((node) => ({ key: node.keyString, rect: this.rects.get(node.keyString) as Rect }));
   }
 
+  translate(deltas: ReadonlyMap<string, { readonly across: number; readonly along: number }>): void {
+    for (const [key, rect] of [...this.rects]) {
+      const delta = deltas.get(key);
+      if (delta !== undefined) {
+        this.rects.set(key, shifted(rect, delta.across, delta.along));
+      }
+    }
+  }
+
   slots(): Map<string, Slot> {
     return new Map([...this.rects].map(([key, rect]) => [key, { across: rect.across, along: rect.along }]));
   }
@@ -310,7 +319,7 @@ function carryDeltas(
   parents: ReadonlyMap<string, ChainNode>,
   prior: ReadonlyMap<string, Slot>,
   manual: ReadonlyMap<string, Slot>,
-  rootAcross: number | undefined,
+  rootTarget: Slot | undefined,
 ): Map<string, Delta> {
   const deltas = new Map<string, Delta>();
   for (const node of ordered) {
@@ -322,7 +331,12 @@ function carryDeltas(
     } else if (pinned !== undefined) {
       deltas.set(node.keyString, { across: pinned.across - before.across, along: pinned.along - before.along });
     } else if (parent === undefined) {
-      deltas.set(node.keyString, { across: rootAcross === undefined ? 0 : rootAcross - before.across, along: 0 });
+      deltas.set(
+        node.keyString,
+        rootTarget === undefined
+          ? NO_DELTA
+          : { across: rootTarget.across - before.across, along: rootTarget.along - before.along },
+      );
     } else {
       deltas.set(node.keyString, deltas.get(parent.keyString) ?? NO_DELTA);
     }
@@ -356,11 +370,15 @@ export function incrementalSlots(request: IncrementalLayoutRequest, options: Eng
   }
   const manualSlots = new Map([...manual].map(([key, position]) => [key, toSlot(mode, position.x, position.y)]));
   const rootExtent = extentOf(tree.root, mode, options);
-  const rootAcross =
-    request.rootOffset === undefined || manual.has(tree.root.keyString)
-      ? undefined
-      : request.rootOffset - rootExtent.across / 2;
-  const deltas = carryDeltas(ordered, parents, prior, manualSlots, rootAcross);
+  const previousRoot = request.previous.find((placed) => placed.nodeKey === tree.root.keyString);
+  const snapRoot =
+    previousRoot !== undefined &&
+    !manual.has(tree.root.keyString) &&
+    (request.rootOffset !== undefined || previousRoot.source === 'manual');
+  const rootTarget: Slot | undefined = snapRoot
+    ? { across: (request.rootOffset ?? 0) - rootExtent.across / 2, along: 0 }
+    : undefined;
+  const deltas = carryDeltas(ordered, parents, prior, manualSlots, rootTarget);
 
   const gaps: Rect[] = [];
   for (const placed of request.previous) {
@@ -369,17 +387,18 @@ export function incrementalSlots(request: IncrementalLayoutRequest, options: Eng
       if (placed.source !== 'manual' && !manual.has(placed.nodeKey)) {
         gaps.push(vanishedRect(placed, mode, options));
       }
-    } else if (!manual.has(placed.nodeKey)) {
-      const delta = deltas.get(placed.nodeKey) as Delta;
-      const slot = prior.get(placed.nodeKey) as Slot;
-      placement.remember(node, { across: slot.across + delta.across, along: slot.along + delta.along });
+    } else {
+      placement.remember(node, prior.get(placed.nodeKey) as Slot);
     }
-  }
-  for (const position of manual.values()) {
-    placement.remember(nodes.get(position.nodeKey) as ChainNode, toSlot(mode, position.x, position.y));
   }
 
   placement.repack(gaps, tree.nodes);
+  placement.translate(deltas);
+  for (const position of manual.values()) {
+    if (!prior.has(position.nodeKey)) {
+      placement.remember(nodes.get(position.nodeKey) as ChainNode, toSlot(mode, position.x, position.y));
+    }
+  }
   const hasRemoval = gaps.length > 0 || removed.size > 0;
 
   for (const node of ordered) {

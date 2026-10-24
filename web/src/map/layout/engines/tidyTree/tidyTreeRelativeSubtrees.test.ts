@@ -378,3 +378,86 @@ describe('alias leaves, parallel connections and ? nodes keep stable placement',
     }
   }
 });
+
+describe('incremental requests that combine a root or manual move with a removal', () => {
+  const lastLeaf = (tree: ChainTree): ChainNode =>
+    tree.nodes.filter((n) => n.kind === 'primary' && n.children.length === 0).at(-1) as ChainNode;
+
+  const removalRequest = (
+    mode: LayoutMode,
+    previous: readonly PlacedNode[],
+    before: ChainTree,
+    extra: { manualPositions?: readonly ManualPosition[]; rootOffset?: number },
+  ): LayoutRequest => {
+    const after = removeConnectionFromTree(GRAPH, SYNTHETIC_ROOT_SYSTEM_ID, [
+      lastLeaf(before).parentEdge?.connectionId as number,
+    ]);
+    const known = new Set(after.nodes.map((n) => n.keyString));
+    return {
+      type: 'incremental',
+      tree: after,
+      mode,
+      manualPositions: [],
+      previous,
+      addedNodeKeys: [],
+      removedNodeKeys: before.nodes.map((n) => n.keyString).filter((key) => !known.has(key)),
+      ...extra,
+    };
+  };
+
+  for (const mode of TREE_MODES) {
+    it(`${mode}: a removal repack with a root move equals the removal alone shifted by the offset`, async () => {
+      const tree = treeOf(GRAPH);
+      const previous = await layoutOf(full(tree, mode));
+      const plain = byKey(await layoutOf(removalRequest(mode, previous, tree, {})));
+      const moved = await layoutOf(removalRequest(mode, previous, tree, { rootOffset: 60 }));
+      const dx = mode === 'top-down' ? 60 : 0;
+      const dy = mode === 'top-down' ? 0 : 60;
+      expect(moved).toHaveLength(plain.size);
+      for (const node of moved) {
+        const alone = plain.get(node.nodeKey) as PlacedNode;
+        expect(node, node.nodeKey).toMatchObject({ x: alone.x + dx, y: alone.y + dy });
+      }
+    });
+
+    it(`${mode}: a removal repack with a manual move repacks as without it and carries the moved subtree`, async () => {
+      const tree = treeOf(GRAPH);
+      const previous = await layoutOf(full(tree, mode));
+      const target = interior(tree);
+      const start = byKey(previous).get(target.keyString) as PlacedNode;
+      const manualPositions = [{ nodeKey: target.keyString, x: start.x + OFFSET.x, y: start.y + OFFSET.y }];
+      const plain = byKey(await layoutOf(removalRequest(mode, previous, tree, {})));
+      const moved = byKey(await layoutOf(removalRequest(mode, previous, tree, { manualPositions })));
+      const carried = new Set(subtreeKeys(target));
+      for (const [key, node] of moved) {
+        if (key === target.keyString) continue;
+        const alone = plain.get(key) as PlacedNode;
+        const expected = carried.has(key)
+          ? { x: alone.x + OFFSET.x, y: alone.y + OFFSET.y }
+          : { x: alone.x, y: alone.y };
+        expect(node, key).toMatchObject(expected);
+      }
+    });
+
+    it(`${mode}: resetting a manual root returns the layout to the auto positions`, async () => {
+      const tree = treeOf(GRAPH);
+      const base = await layoutOf(full(tree, mode));
+      const root = byKey(base).get(tree.root.keyString) as PlacedNode;
+      const pinned = await layoutOf(
+        full(tree, mode, [{ nodeKey: tree.root.keyString, x: root.x + 50, y: root.y + 70 }]),
+      );
+      const incremental = (rootOffset?: number): LayoutRequest => ({
+        type: 'incremental',
+        tree,
+        mode,
+        manualPositions: [],
+        previous: pinned,
+        addedNodeKeys: [],
+        removedNodeKeys: [],
+        ...(rootOffset === undefined ? {} : { rootOffset }),
+      });
+      expect(await layoutOf(incremental())).toEqual(base);
+      expect(await layoutOf(incremental(40))).toEqual(await layoutOf(full(tree, mode, [], 40)));
+    });
+  }
+});
