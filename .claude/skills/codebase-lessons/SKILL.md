@@ -64,3 +64,4 @@ metadata:
 - Layout `x`,`y` are node top-left in both engines (WS-1.2)
 - Agent shells reject multi-expression `sed -i`; line-pattern `sed` deletes can cut multi-line statements, so use Edit (WS-1.2)
 - e2e host selects an engine via the Worker `name` option (`self.name`); register new engines in `web/e2e/host/engines.ts` (WS-1.2)
+- Go files are forced to LF by `.gitattributes` (`*.go text eol=lf`); gofmt flags CRLF working copies from `core.autocrlf=true` (WS-1.3)
