@@ -1,3 +1,5 @@
 # Merge the curated lessons file by keeping both sides' lines (no conflicts across parallel work streams).
 # The Team Lead dedupes it at release (#T-TLO §9.3).
 .claude/skills/codebase-lessons/SKILL.md merge=union
+
+*.go text eol=lf
