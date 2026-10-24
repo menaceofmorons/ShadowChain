@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { CanvasHostState } from './host/canvas';
 import { DEFAULT_ENGINE_OPTIONS } from '../src/map/layout/engineOptions';
+import { RADIAL_MAX_EXTENT_AT_150, RADIAL_MAX_GAP_RATIO } from '../src/map/layout/engines/elk/radialLegibility';
 import { LAYOUT_MODES } from '../src/map/layout/types';
 import { buildChainTree } from '../src/map/model/chainTree';
 import type { ChainNode } from '../src/map/model/types';
@@ -60,7 +61,10 @@ const readScreenCentres = (): Centre[] =>
     return { id: element.dataset.id ?? '', x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
   });
 
-const depthsOf = (nodeCount: number): Map<string, number> => {
+const treeFor = (nodeCount: number, seed: number): ChainNode =>
+  buildChainTree(generateChain({ nodeCount, seed }), SYNTHETIC_ROOT_SYSTEM_ID).root;
+
+const depthsOf = (nodeCount: number, seed: number): Map<string, number> => {
   const depths = new Map<string, number>();
   const walk = (node: ChainNode, depth: number): void => {
     depths.set(node.keyString, depth);
@@ -68,35 +72,127 @@ const depthsOf = (nodeCount: number): Map<string, number> => {
       walk(child, depth + 1);
     });
   };
-  walk(buildChainTree(generateChain({ nodeCount, seed: 7 }), SYNTHETIC_ROOT_SYSTEM_ID).root, 0);
+  walk(treeFor(nodeCount, seed), 0);
   return depths;
 };
 
-test.describe('radial rings as drawn on screen', () => {
-  test('every node of a level is the same distance from the root and each level is strictly outside the previous', async ({
-    page,
-  }) => {
-    await page.goto(`/e2e/host/canvas.html?mode=radial&size=${String(NODE_COUNT)}&seed=7`);
+const RING_TOLERANCE_PX = 1;
+const RATIO_TOLERANCE = 1.005;
+const ANGLE_TOLERANCE = 1e-3;
+const RADIAL_CASES = [
+  { nodes: 150, seed: 7 },
+  { nodes: 150, seed: 8 },
+  { nodes: 500, seed: 7 },
+] as const;
+
+const wrapAngle = (angle: number): number => {
+  const turned = angle % (2 * Math.PI);
+  if (turned > Math.PI) return turned - 2 * Math.PI;
+  return turned <= -Math.PI ? turned + 2 * Math.PI : turned;
+};
+
+for (const { nodes, seed } of RADIAL_CASES) {
+  test.describe(`radial rules as drawn on screen, ${String(nodes)} nodes, seed ${String(seed)}`, () => {
+    const url = `/e2e/host/canvas.html?mode=radial&size=${String(nodes)}&seed=${String(seed)}`;
+
+    test('rules 1 and 4: one circle per level, each outside the previous, gaps within the ratio', async ({ page }) => {
+      await page.goto(url);
+      await page.waitForFunction(() => (window as unknown as { __canvas: CanvasHostState }).__canvas.done);
+      const centres = await page.evaluate(readScreenCentres);
+      const depths = depthsOf(nodes, seed);
+      const root = centres.find((centre) => depths.get(centre.id) === 0) as Centre;
+      const radiiByDepth = new Map<number, number[]>();
+      for (const centre of centres) {
+        const depth = depths.get(centre.id) as number;
+        radiiByDepth.set(depth, [...(radiiByDepth.get(depth) ?? []), Math.hypot(centre.x - root.x, centre.y - root.y)]);
+      }
+      const levels = [...radiiByDepth.entries()].sort(([a], [b]) => a - b);
+      expect(levels.length).toBeGreaterThan(2);
+      let previous = -1;
+      for (const [depth, radii] of levels) {
+        const ring = radii[0] as number;
+        expect(
+          Math.max(...radii.map((radius) => Math.abs(radius - ring))),
+          `ring ${String(depth)} spread`,
+        ).toBeLessThan(RING_TOLERANCE_PX);
+        expect(ring, `ring ${String(depth)} outside the previous`).toBeGreaterThan(previous);
+        previous = ring;
+      }
+      const means = levels.map(([, radii]) => radii.reduce((sum, radius) => sum + radius, 0) / radii.length);
+      const gaps = means.slice(1).map((radius, index) => radius - (means[index] as number));
+      gaps.slice(1).forEach((gap, index) => {
+        const ratio = Math.max(gap, gaps[index] as number) / Math.min(gap, gaps[index] as number);
+        expect(ratio, `gap ${String(index + 1)} to ${String(index + 2)}`).toBeLessThanOrEqual(
+          RADIAL_MAX_GAP_RATIO * RATIO_TOLERANCE,
+        );
+      });
+    });
+
+    test('rule 2: children fan out from their parent on screen', async ({ page }) => {
+      await page.goto(url);
+      await page.waitForFunction(() => (window as unknown as { __canvas: CanvasHostState }).__canvas.done);
+      const centres = new Map((await page.evaluate(readScreenCentres)).map((centre) => [centre.id, centre]));
+      const rootNode = treeFor(nodes, seed);
+      const origin = centres.get(rootNode.keyString) as Centre;
+      const angleOf = (node: ChainNode): number => {
+        const centre = centres.get(node.keyString) as Centre;
+        return Math.atan2(centre.y - origin.y, centre.x - origin.x);
+      };
+      const visit = (node: ChainNode, depth: number): void => {
+        if (depth > 0 && node.children.length > 0) {
+          const turns = node.children.map((child) => wrapAngle(angleOf(child) - angleOf(node)));
+          expect(Math.min(...turns), node.keyString).toBeLessThan(ANGLE_TOLERANCE);
+          expect(Math.max(...turns), node.keyString).toBeGreaterThan(-ANGLE_TOLERANCE);
+        }
+        node.children.forEach((child) => {
+          visit(child, depth + 1);
+        });
+      };
+      visit(rootNode, 0);
+    });
+
+    test('rule 5: the root is drawn differently from depth-1 nodes and ring guides are on the page', async ({ page }) => {
+      await page.goto(url);
+      await page.waitForFunction(() => (window as unknown as { __canvas: CanvasHostState }).__canvas.done);
+      const rootNode = treeFor(nodes, seed);
+      const border = (key: string) =>
+        page.evaluate((id) => {
+          const element = document.querySelector<HTMLElement>(`.react-flow__node[data-id="${id}"] > div`);
+          return element === null ? null : getComputedStyle(element).borderTopWidth;
+        }, key);
+      const rootBorder = await border(rootNode.keyString);
+      expect(rootBorder).not.toBeNull();
+      for (const child of rootNode.children) {
+        expect(await border(child.keyString)).not.toBe(rootBorder);
+      }
+      const state = await page.evaluate(() => (window as unknown as { __canvas: CanvasHostState }).__canvas);
+      const deepest = Math.max(...depthsOf(nodes, seed).values());
+      expect(state.ringGuides).toBe(deepest);
+    });
+
+    if (nodes === NODE_COUNT) {
+      test('rule 6: overall extent is within the stated bound', async ({ page }) => {
+        await page.goto(url);
+        await page.waitForFunction(() => (window as unknown as { __canvas: CanvasHostState }).__canvas.done);
+        const boxes = await page.evaluate(readDrawnBoxes);
+        const width = Math.max(...boxes.map((box) => box.x + box.width)) - Math.min(...boxes.map((box) => box.x));
+        const height = Math.max(...boxes.map((box) => box.y + box.height)) - Math.min(...boxes.map((box) => box.y));
+        expect(Math.max(width, height)).toBeLessThanOrEqual(RADIAL_MAX_EXTENT_AT_150);
+      });
+    }
+  });
+}
+
+test.describe('radial with +N nodes drawn', () => {
+  test('no drawn boxes overlap', async ({ page }) => {
+    await page.goto(`/e2e/host/canvas.html?mode=radial&size=${String(NODE_COUNT)}&seed=7&collapse=5`);
     await page.waitForFunction(() => (window as unknown as { __canvas: CanvasHostState }).__canvas.done);
-    const centres = await page.evaluate(readScreenCentres);
-    const depths = depthsOf(NODE_COUNT);
-    const root = centres.find((centre) => depths.get(centre.id) === 0) as Centre;
-    const radiiByDepth = new Map<number, number[]>();
-    for (const centre of centres) {
-      const depth = depths.get(centre.id) as number;
-      radiiByDepth.set(depth, [...(radiiByDepth.get(depth) ?? []), Math.hypot(centre.x - root.x, centre.y - root.y)]);
-    }
-    const levels = [...radiiByDepth.entries()].sort(([a], [b]) => a - b);
-    expect(levels.length).toBeGreaterThan(2);
-    let previous = -1;
-    for (const [depth, radii] of levels) {
-      const ring = radii[0] as number;
-      expect(Math.max(...radii.map((radius) => Math.abs(radius - ring))), `ring ${String(depth)} spread`).toBeLessThan(
-        1,
-      );
-      expect(ring, `ring ${String(depth)} outside the previous`).toBeGreaterThan(previous);
-      previous = ring;
-    }
+    const state = await page.evaluate(() => (window as unknown as { __canvas: CanvasHostState }).__canvas);
+    expect(state.error).toBeNull();
+    expect(state.collapsedCount).toBe(5);
+    const boxes = await page.evaluate(readDrawnBoxes);
+    expect(boxes.filter((box) => box.id.startsWith('+:'))).toHaveLength(5);
+    expect(overlappingPairs(boxes)).toEqual([]);
   });
 });
 
