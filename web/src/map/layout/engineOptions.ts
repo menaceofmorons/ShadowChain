@@ -1,4 +1,4 @@
-import type { ChainNode } from '../model/types';
+import type { ChainNode, ChainNodeKind } from '../model/types';
 
 export interface EngineOptions {
   readonly nodeWidth: number;
@@ -26,8 +26,8 @@ export function resolveEngineOptions(overrides: Partial<EngineOptions> = {}): En
   return { ...DEFAULT_ENGINE_OPTIONS, ...overrides };
 }
 
-export function nodeSize(node: ChainNode, options: EngineOptions): { width: number; height: number } {
-  switch (node.kind) {
+export function nodeSizeForKind(kind: ChainNodeKind, options: EngineOptions): { width: number; height: number } {
+  switch (kind) {
     case 'alias':
       return { width: options.aliasWidth, height: options.aliasHeight };
     case 'collapsed':
@@ -35,4 +35,8 @@ export function nodeSize(node: ChainNode, options: EngineOptions): { width: numb
     default:
       return { width: options.nodeWidth, height: options.nodeHeight };
   }
+}
+
+export function nodeSize(node: ChainNode, options: EngineOptions): { width: number; height: number } {
+  return nodeSizeForKind(node.kind, options);
 }

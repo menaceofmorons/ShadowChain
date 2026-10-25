@@ -4,7 +4,7 @@ import type { ChainNode } from '../../../model/types';
 import { nodeSize, resolveEngineOptions } from '../../engineOptions';
 import type { EngineOptions } from '../../engineOptions';
 import { placementFlags } from '../../placementFlags';
-import type { LayoutEngine, LayoutMode, LayoutRequest, PlacedNode } from '../../types';
+import type { IncrementalLayoutRequest, LayoutEngine, LayoutMode, LayoutRequest, PlacedNode } from '../../types';
 import { placeRadialIncrementally } from './radialIncremental';
 import { RADIAL_MAX_GAP_RATIO, smoothRingRadii } from './radialLegibility';
 import { carryRadialSubtrees } from './radialRelativeSubtrees';
@@ -372,40 +372,48 @@ export function createElkEngine(overrides: Partial<EngineOptions> = {}): LayoutE
     return [...placed.values()];
   };
 
+  const incrementalRadialLayout = async (request: IncrementalLayoutRequest): Promise<readonly PlacedNode[] | null> => {
+    const spots = placeRadialIncrementally(request, options);
+    if (spots === null) {
+      return null;
+    }
+    const placed = new Map<string, PlacedNode>();
+    const deferred = new Set<string>();
+    for (const node of request.tree.nodes) {
+      const spot = spots.get(node.keyString);
+      if (spot === undefined) {
+        deferred.add(node.keyString);
+        continue;
+      }
+      placed.set(node.keyString, {
+        nodeKey: node.keyString,
+        x: spot.x,
+        y: spot.y,
+        source: 'auto',
+        ...placementFlags(request, node),
+      });
+    }
+    applyManual(placed, request);
+    if (deferred.size > 0) {
+      const fresh = await freshLayout(request);
+      const carried = carryRadialSubtrees(request.tree.root, fresh, request.manualPositions);
+      for (const key of deferred) {
+        const spot = carried.get(key) as { x: number; y: number };
+        placed.set(key, { ...(fresh.get(key) as PlacedNode), x: toHundredths(spot.x), y: toHundredths(spot.y) });
+      }
+      if (overlapsAny(request, placed, deferred, options)) {
+        return null;
+      }
+    }
+    return request.tree.nodes.map((node) => placed.get(node.keyString) as PlacedNode);
+  };
+
   return {
     async layout(request) {
       if (request.type === 'incremental' && request.mode === 'radial') {
-        const spots = placeRadialIncrementally(request, options);
-        if (spots !== null) {
-          const placed = new Map<string, PlacedNode>();
-          const deferred = new Set<string>();
-          for (const node of request.tree.nodes) {
-            const spot = spots.get(node.keyString);
-            if (spot === undefined) {
-              deferred.add(node.keyString);
-              continue;
-            }
-            placed.set(node.keyString, {
-              nodeKey: node.keyString,
-              x: spot.x,
-              y: spot.y,
-              source: 'auto',
-              ...placementFlags(request, node),
-            });
-          }
-          applyManual(placed, request);
-          if (deferred.size === 0) {
-            return [...placed.values()];
-          }
-          const fresh = await freshLayout(request);
-          const carried = carryRadialSubtrees(request.tree.root, fresh, request.manualPositions);
-          for (const key of deferred) {
-            const spot = carried.get(key) as { x: number; y: number };
-            placed.set(key, { ...(fresh.get(key) as PlacedNode), x: toHundredths(spot.x), y: toHundredths(spot.y) });
-          }
-          if (!overlapsAny(request, placed, deferred, options)) {
-            return request.tree.nodes.map((node) => placed.get(node.keyString) as PlacedNode);
-          }
+        const incremental = await incrementalRadialLayout(request);
+        if (incremental !== null) {
+          return incremental;
         }
       }
       return fullLayout(request);

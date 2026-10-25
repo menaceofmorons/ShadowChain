@@ -1,8 +1,7 @@
 import { useMemo } from 'react';
 import { Handle, Position, ReactFlow, type Edge, type Node, type NodeProps, type NodeTypes } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import type { ChainNode } from '../model/types';
-import { DEFAULT_ENGINE_OPTIONS, nodeSize } from '../layout/engineOptions';
+import { DEFAULT_ENGINE_OPTIONS, nodeSizeForKind } from '../layout/engineOptions';
 import type { LayoutMode } from '../layout/types';
 import type { CanvasAdapterProps } from './canvasAdapter';
 
@@ -88,8 +87,8 @@ export function ReactFlowCanvas({
     () =>
       nodes.map((n) => {
         const collapsed = n.hiddenCount !== undefined && n.hiddenCount !== null;
-        const { width, height } = nodeSize(
-          { kind: collapsed ? 'collapsed' : n.isAlias ? 'alias' : 'primary' } as ChainNode,
+        const { width, height } = nodeSizeForKind(
+          collapsed ? 'collapsed' : n.isAlias ? 'alias' : 'primary',
           DEFAULT_ENGINE_OPTIONS,
         );
         const sides = SIDES[mode];

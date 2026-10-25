@@ -1,5 +1,5 @@
 import type { ChainNode } from '../../../model/types';
-import { nodeSize } from '../../engineOptions';
+import { nodeSizeForKind } from '../../engineOptions';
 import type { EngineOptions } from '../../engineOptions';
 import type { IncrementalLayoutRequest, LayoutMode, PlacedNode } from '../../types';
 import { childrenOf, extentOf, toSlot } from './tidyTreeGeometry';
@@ -34,8 +34,8 @@ const shifted = (rect: Rect, dAcross: number, dAlong: number): Rect => ({
 });
 
 const vanishedRect = (prior: PlacedNode, mode: LayoutMode, options: EngineOptions): Rect => {
-  const kind = prior.alias ? 'alias' : prior.hiddenCount !== null ? 'collapsed' : 'primary';
-  const { width, height } = nodeSize({ kind } as ChainNode, options);
+  const kind = prior.alias ? 'alias' : prior.hiddenCount === null ? 'primary' : 'collapsed';
+  const { width, height } = nodeSizeForKind(kind, options);
   const slot = toSlot(mode, prior.x, prior.y);
   const across = mode === 'top-down' ? width : height;
   const along = mode === 'top-down' ? height : width;
