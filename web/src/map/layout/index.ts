@@ -19,7 +19,7 @@ export type { LayoutAdapter } from './layoutAdapter';
 export { createWorkerHost } from './workerHost';
 export type { WorkerHostOptions } from './workerHost';
 export { bindEngineToWorker } from './workerBootstrap';
-export { DEFAULT_ENGINE_OPTIONS, nodeSize, resolveEngineOptions } from './engineOptions';
+export { DEFAULT_ENGINE_OPTIONS, nodeSize, nodeSizeForKind, resolveEngineOptions } from './engineOptions';
 export type { EngineOptions } from './engineOptions';
 export { DEFAULT_LAYOUT_TIMEOUT_MS } from './layoutAdapter';
 export type { LayoutAdapterOptions } from './layoutAdapter';

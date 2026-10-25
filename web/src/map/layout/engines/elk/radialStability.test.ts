@@ -9,7 +9,7 @@ import { DEFAULT_ENGINE_OPTIONS } from '../../engineOptions';
 import type { LayoutEngine, PlacedNode } from '../../types';
 import { createElkEngine } from './elkEngine';
 
-// PROVISIONAL: A2 displacement bounds for a non-saturating incremental step; configurable.
+// TUNE: displacement and time bounds for a non-saturating radial incremental step (A2).
 const MAX_MOVED_FRACTION_ADDITION = 0.75;
 const MAX_MOVED_FRACTION_REMOVAL = 1;
 const MAX_SHIFT = 2500;

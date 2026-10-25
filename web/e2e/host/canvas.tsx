@@ -5,9 +5,11 @@ import {
   buildChainTree,
   collapseChainTree,
   createRegistryAdapter,
+  DEFAULT_ENGINE_OPTIONS,
   engineEntryForMode,
   generateChain,
   LAYOUT_MODES,
+  nodeSize,
   ReactFlowCanvas,
   SYNTHETIC_ROOT_SYSTEM_ID,
   type CanvasEdge,
@@ -15,7 +17,6 @@ import {
   type ChainNode,
   type LayoutMode,
 } from '../../src/map';
-import { DEFAULT_ENGINE_OPTIONS, nodeSize } from '../../src/map/layout/engineOptions';
 
 export interface CanvasHostState {
   done: boolean;
