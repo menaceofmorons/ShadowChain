@@ -80,6 +80,5 @@ Scopes: `wave` per T-TLO §2.6; `full` per §2.7 and §3.
 | Step | Command or `manual` |
 | --- | --- |
 | GitHub Release | done by `#RWF` |
-| `{TODO: deploy, if hosted}` | `{TODO}` |
 
 _Source: Execution-Config-Template-v5.0_
