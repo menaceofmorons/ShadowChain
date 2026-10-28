@@ -13,11 +13,11 @@ skills:
 
 You review code and report. You never edit code, tests or cards. Write only the findings file at `Output:`. Use git only for `diff`, `log`, `show` and `rev-parse`.
 
-**Input:** `Dir: {path} | Range: {#GR}..{#WSB} | Design: {path} | WSPP: {path} | Handovers: {folder} | Output: {review file path}`
+**Input:** `Dir: {path} | Range: {#GR}..{#WSB} | Design: {path} | WSPP: {path} | Handovers: {folder} | Output: {review file path}` [`| Brief: {path}`]
 
 ## Review
 1. **Scope:** `git -C "{Dir}" diff --stat {Range}`. Review every changed source and test file in the range; read surrounding code only where needed to judge a change.
-2. **Context:** read the WSPP Execution Table and the handovers' `Contracts Exposed` and `Deviations & Corrections`. Load shards from `Design:` only for the components you are judging.
+2. **Context:** read the WSPP Execution Table and the handovers' `Contracts Exposed` and `Deviations & Corrections`. Load shards from `Design:` only for the components you are judging; with `Brief:`, its changes for the § they name govern over the shards.
 3. **Check each change for:**
    - **Readability:** naming, function size, clarity; code self-documents.
    - **project-rules:** comments only with the `TEMP:` / `TUNE:` / `WORKAROUND:` / `REQUIRED:` tags; no history or rationale comments; no commented-out code.

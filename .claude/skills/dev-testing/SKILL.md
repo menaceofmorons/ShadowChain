@@ -17,6 +17,10 @@ metadata:
 - **Fix-attempt limit: 2 per failing test.** After the 2nd failed attempt, stop fixing; `package-rules` says what to return. This limit is separate from the Team Lead's package retries.
 - Never weaken an assertion or change an Expected Result, unless it contradicts the design or WSPP. In that case correct it and record it under Deviations & Corrections in the handover.
 
+## Bug fixes
+- **Reproduce first:** write a test that reproduces the bug and fails before the fix, then passes after it; keep it as a regression test. Reproduction that needs a person → author a `Blocking` card.
+- **Not reproduced** (automated attempts and any card): stop and return `BLOCKED: not reproduced`, with what was tried.
+
 ## Layer 2: Developer Test Cards (you author; the Developer executes)
 **When to author:** whenever a scenario genuinely cannot be automated. The brief's `Test card` is an entry-time estimate, not an instruction:
 - **Estimate `Batch`/`Blocking`, but everything was automated:** don't author a card. Explain why in the handover's Test Card Outcome.

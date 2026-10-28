@@ -33,7 +33,9 @@ Target build output and generated folders, never source folders. The file-tool p
 - **Paths:** all paths use `/`, including Windows absolute paths (`C:/Users/…`).
 
 ### Working Rules
-- **Design authority:** the approved dense design (`#DSD`) governs every plan, decision and change. On conflict, the design wins. Never plan, make or approve anything that contradicts it or adds architecture it does not define; if work seems to need that, stop and escalate (agents: `BLOCKED`; sessions: ask the Developer). The design changes only through `#T-DU`. How to read it: `#DDU` (agents: `dense-design`).
+- **Design authority:** the approved dense design (`#DSD`) governs every plan, decision and change. On conflict, the design wins. Never plan, make or approve anything that contradicts it or adds architecture it does not define; if work seems to need that, stop and escalate (agents: `BLOCKED`; sessions: ask the Developer). The design changes only through `#T-DU`. Exception: in a standalone phase, a `#BRF` design change (`C-nn`) governs the § it names during its own work stream only, and reaches the design through `#T-DU` on acceptance. How to read it: `#DDU` (agents: `dense-design`).
+- **Versions:** SemVer per `#NP`. A new major version (new roadmap) sets MAJOR; a release containing an Enhancement → MINOR; Bug fixes only → PATCH; alpha/beta → pre-release number only. Only `#T-REL` writes `main` and release tags.
+- **Bug fixes:** reproduce first (agents: `dev-testing`; sessions: `#TG`).
 - **Path discipline:** access only paths named by your session instructions, `#NP`, the active protocol or brief, or the Developer. No orientation scans.
 - **Scope:** change only what the active plan, brief or Developer scopes; leave all other behaviour untouched.
 - **Answers:** answer only what was asked, as briefly as the question allows. A yes/no question gets "Yes." or "No." plus at most one sentence; a choice gets the recommendation and the options in one or two lines. Give detail only when the Developer asks.
@@ -46,7 +48,16 @@ Target build output and generated folders, never source folders. The file-tool p
 ### Protocols (main sessions only)
 - `#T-{Name}` is Developer direction to run `#PROT/T-{Name}-vX.X.md` (top level only, case-insensitive). Read it once per session, plus only the files it names.
 - No matching file: say so and stop. Never improvise a protocol.
-- If its `Runs in:` excludes your tool (CoWork or Claude Code), stop and tell the Developer which tool to run it in.
+- If its `Runs in:` excludes your tool (Chat, CoWork or Claude Code), stop and tell the Developer which tool to run it in.
+- **Session check:** if it has a `Session:` line (a mode variant, e.g. `` `fix`: … ``, applies when the trigger carries that mode), before anything else reply only with this block, filled from that line, and start only on the Developer's `continue`; on `MISMATCH` or `unknown`, repeat it once on `continue`:
+
+  ```
+  Session check — #T-{Name}
+  - Recommended: {Model}, effort {Level}
+  - Running on: {model named in your system information, or "unknown"} → {OK | MISMATCH: switch to {Model} before continuing}
+  - Effort cannot be verified: confirm it is set to {Level}.
+  Reply "continue" to start.
+  ```
 
 ### Code Comments
 Code is self-documenting: clear names, small functions, explicit types. **The default is no comment.**

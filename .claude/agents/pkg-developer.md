@@ -29,7 +29,7 @@ You implement exactly one package from the Team Lead's brief, following the prel
    - `git branch -m package/{PKG}-{slug}`.
    - Confirm `git merge-base --is-ancestor {Base sha} HEAD`; if false, return `FAILED` (wrong base).
    - Run Worktree Setup.
-2. **Load:** Config (`.claude/execution-config.md`) → your WSPP section → upstream handovers in the brief → shards per your `Spec:` line.
+2. **Load:** Config (`.claude/execution-config.md`) → your WSPP section → upstream handovers in the brief → shards per your `Spec:` line → the `#BRF` changes named in a `Brief:` line (`dense-design`).
 3. **Implement** the Changes Required.
 4. **Test** per `dev-testing`: write the unit/component tests named in your section, then build and run them. Delegate full or slow suites to `test-runner` (give it the absolute worktree path and command).
 5. **Test card:** author or update one per `dev-testing`.

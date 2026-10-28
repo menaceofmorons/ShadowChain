@@ -29,7 +29,7 @@ You execute either the terminal integration package for one work stream or a rel
 2. **Load:**
    - Config, then the WSPP `PKG-{WS}.Integration` section.
    - Every upstream handover in the brief, and every package test card those handovers list (highest `.x` version).
-   - Shards only for the interfaces you wire.
+   - Shards only for the interfaces you wire, plus the `#BRF` changes named in a `Brief:` line (`dense-design`).
 3. **Wire** cross-package components as the Integration section and the handovers' "Notes for Integration" direct. Do not re-implement package scope. If a package output is defective, return `BLOCKED` naming the package.
 4. **Integration tests:**
    - Derive cumulative scenarios from the package cards and handovers.

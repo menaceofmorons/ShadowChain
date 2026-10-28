@@ -9,6 +9,7 @@ metadata:
 ## DENSE DESIGN USAGE
 - **Design:** the brief's `Design:` path (`Design_Spec_Dense/`). Read-only. Authority: `project-rules` (Design authority).
 - **What to load:** `00_Index.md`, `01_Core.md`, and only the shards your package's `Spec:` line declares. Never load `_work/`, `00_Ownership.md` or the source .docx.
+- **Brief changes:** a `Brief:` line names `#BRF` changes `C-nn` (standalone phases); read only those rows. Each governs the § it names over the shard text; the rest of that § stands. Cite as `C-nn (§x)`.
 - **Citing:** Cite design facts by § tag (e.g. `§5.4.2`). Never copy shard text into handovers or test cards.
 - **Literals:** `LITERAL: Appendix/…` → open that file only when the package builds that artifact.
 - **Missing facts:** If a fact is not in your loaded shards, find its owner via the Index and load that shard. If it is still missing, return `BLOCKED`. Never infer and never fill gaps.

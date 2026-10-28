@@ -61,4 +61,25 @@ Scopes: `wave` per T-TLO §2.6; `full` per §2.7 and §3.
 | unit-web | `npm run test --prefix web` | `web/package.json` | full |
 | e2e | `npm run e2e --prefix web` | `web/playwright.config.ts` | full |
 
+## Release (`#T-REL`, `#T-RS`)
+| Var | Value | Notes |
+| --- | --- | --- |
+| `#BUILD` | `actions` | `#RWF` builds and publishes on tag push; written by `#T-RS workflow` |
+
+### Version Files
+| File | Pattern |
+| --- | --- |
+| `web/package.json` | `"version": "{v}"` |
+
+### Release Build (`local` only)
+| Step | Command |
+| --- | --- |
+| — | — |
+
+### Publish Steps
+| Step | Command or `manual` |
+| --- | --- |
+| GitHub Release | done by `#RWF` |
+| `{TODO: deploy, if hosted}` | `{TODO}` |
+
 _Source: Execution-Config-Template-v5.0_
