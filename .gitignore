@@ -1,3 +1,4 @@
+# >>> devframework (managed; edit in DevFramework) >>>
 # --- Agent team ---
 # Claude Code worktrees (Desktop session worktrees and subagent worktrees)
 .claude/worktrees/
@@ -9,6 +10,7 @@
 # Dependencies and test output, wherever an agent leaves them (worktree root included)
 node_modules/
 test-results/
+# <<< devframework <<<
 
 # --- ShadowChain ---
 # SQLite runtime files (WAL mode)
