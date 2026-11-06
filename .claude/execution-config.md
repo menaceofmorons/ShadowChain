@@ -34,6 +34,13 @@ Run by every agent in a fresh worktree, and by `health-check` before checks. Com
 | deps-frontend | `npm install --prefix web` | `web/package.json` |
 | deps-backend | `go mod download` | `go.mod` |
 
+## Build Cache (health-check, pkg-integrator)
+Every worktree builds in its own checkout, so a toolchain that keeps its build output or cache per checkout starts cold in each one. One row per compiled toolchain. `Redirect` is what the Developer sets once per machine (`Machine-Setup.md`, Build caches): a machine-wide folder outside any synced folder. `Check` is a command that exits 0 when the redirect is in effect. Rules: `project-rules` (Build cache).
+
+| Toolchain | Redirect | Check | Requires |
+| --- | --- | --- | --- |
+| Go | none: the default `GOCACHE` is machine-wide; the check fails only if it points under OneDrive | `py -c "import subprocess,sys;p=subprocess.run(['go','env','GOCACHE'],capture_output=True,text=True).stdout.lower();sys.exit(1 if 'onedrive' in p else 0)"` | `go.mod` |
+
 ## Package Test Commands (package agents / test-runner)
 | Purpose | Command | Requires |
 | --- | --- | --- |
