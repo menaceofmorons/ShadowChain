@@ -53,20 +53,20 @@ Every worktree builds in its own checkout, so a toolchain that keeps its build o
 ## Health Checks (health-check)
 Scopes: `wave` per T-TLO §2.6; `full` per §2.7 and §3.
 
-| Name | Command | Requires | Scope |
-| --- | --- | --- | --- |
-| build-web | `npm run build --prefix web` | `web/package.json` | wave, full |
-| build-go | `go build ./...` | `go.mod` | wave, full |
-| vet | `go vet ./...` | `go.mod` | wave, full |
-| format-go | `py -c "import subprocess,sys;o=subprocess.run(['gofmt','-l','.'],capture_output=True,text=True).stdout;print(o);sys.exit(1 if o.strip() else 0)"` | `go.mod` | wave, full |
-| golangci-lint | `golangci-lint run` | `go.mod` | wave, full |
-| frontend-lint | `npm run lint --prefix web` | `web/package.json` | wave, full |
-| format-web | `npm run format:check --prefix web` | `web/package.json` | wave, full |
-| typecheck | `npm run typecheck --prefix web` | `web/package.json` | wave, full |
-| type-drift | `tygo generate && git diff --exit-code -- web/src/api/types.gen.ts` | `tygo.yaml` | wave, full |
-| unit-go | `go test ./...` | `go.mod` | full |
-| unit-web | `npm run test --prefix web` | `web/package.json` | full |
-| e2e | `npm run e2e --prefix web` | `web/playwright.config.ts` | full |
+| Name | Command | Requires | Scope | Paths |
+| --- | --- | --- | --- | --- |
+| build-web | `npm run build --prefix web` | `web/package.json` | wave, full | `web/` |
+| build-go | `go build ./...` | `go.mod` | wave, full | `cmd/, internal/, go.mod, go.sum` |
+| vet | `go vet ./...` | `go.mod` | wave, full | `cmd/, internal/, go.mod, go.sum` |
+| format-go | `py -c "import subprocess,sys;o=subprocess.run(['gofmt','-l','.'],capture_output=True,text=True).stdout;print(o);sys.exit(1 if o.strip() else 0)"` | `go.mod` | wave, full | `cmd/, internal/` |
+| golangci-lint | `golangci-lint run` | `go.mod` | wave, full | `cmd/, internal/, go.mod, go.sum, .golangci.yml` |
+| frontend-lint | `npm run lint --prefix web` | `web/package.json` | wave, full | `web/` |
+| format-web | `npm run format:check --prefix web` | `web/package.json` | wave, full | `web/` |
+| typecheck | `npm run typecheck --prefix web` | `web/package.json` | wave, full | `web/` |
+| type-drift | `tygo generate && git diff --exit-code -- web/src/api/types.gen.ts` | `tygo.yaml` | wave, full | `—` |
+| unit-go | `go test ./...` | `go.mod` | full | `cmd/, internal/, go.mod, go.sum` |
+| unit-web | `npm run test --prefix web` | `web/package.json` | full | `web/` |
+| e2e | `npm run e2e --prefix web` | `web/playwright.config.ts` | full | `web/` |
 
 ## Release (`#T-REL`, `#T-RS`)
 | Var | Value | Notes |
