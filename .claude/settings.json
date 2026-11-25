@@ -11,5 +11,10 @@
   },
   "enabledPlugins": {
     "devfw@devframework": true
+  },
+  "modelSettings": {
+    "claude-opus-5-5": {
+      "autoCompactWindow": 150000
+    }
   }
 }
