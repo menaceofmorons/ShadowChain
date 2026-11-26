@@ -36,7 +36,7 @@ async function render(
 function makeGraph(n: number): { nodes: CanvasNode[]; edges: CanvasEdge[] } {
   const nodes = Array.from({ length: n }, (_, i) => ({ key: `s:${i}`, x: i * 50, y: 0, isAlias: i % 2 === 1 }));
   const edges = nodes.slice(1).map((node, i) => ({
-    connectionId: `c${i}`,
+    connectionId: i + 1,
     sourceKey: `s:${i}`,
     targetKey: node.key,
   }));

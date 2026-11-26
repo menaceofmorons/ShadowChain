@@ -1,32 +1,12 @@
-import { useMemo } from 'react';
-import { Handle, Position, ReactFlow, type Edge, type Node, type NodeProps, type NodeTypes } from '@xyflow/react';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { applyNodeChanges, Position, ReactFlow, type Edge, type Node, type NodeChange } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { DEFAULT_ENGINE_OPTIONS, nodeSizeForKind } from '../layout/engineOptions';
 import type { LayoutMode } from '../layout/types';
-import type { CanvasAdapterProps } from './canvasAdapter';
-
-interface BoxData extends Record<string, unknown> {
-  label: string;
-  width: number;
-  height: number;
-  mode: LayoutMode;
-  isRoot: boolean;
-}
-
-type BoxNode = Node<BoxData, 'box'>;
-
-interface HandleSides {
-  readonly target: Position;
-  readonly source: Position;
-}
-
-const SIDES: Record<LayoutMode, HandleSides> = {
-  'top-down': { target: Position.Top, source: Position.Bottom },
-  'left-to-right': { target: Position.Left, source: Position.Right },
-  radial: { target: Position.Top, source: Position.Top },
-};
-
-const CENTRED = { top: '50%', left: '50%', opacity: 0 } as const;
+import type { CanvasAdapterProps, CanvasNode, MovedNode } from './canvasAdapter';
+import { NODE_TYPES, SIDES, type BoxData, type BoxNode } from './canvasNodes';
+import { createHighlightStore, HighlightContext } from './highlightStore';
+import { canvasNodeKind, highlightGroups, type CanvasNodeKind } from './nodeKinds';
 
 const handlePoint = (position: Position, width: number, height: number): { x: number; y: number } => {
   switch (position) {
@@ -41,39 +21,52 @@ const handlePoint = (position: Position, width: number, height: number): { x: nu
   }
 };
 
-function Box({ data }: NodeProps<BoxNode>) {
-  const sides = SIDES[data.mode];
-  const handleStyle = data.mode === 'radial' ? CENTRED : undefined;
-  return (
-    <div
-      style={{
-        width: data.width,
-        height: data.height,
-        boxSizing: 'border-box',
-        border: data.isRoot ? '3px solid #c0392b' : '1px solid #1a192b',
-        borderRadius: data.isRoot ? 24 : 3,
-        background: data.isRoot ? '#ffe9e6' : '#fff',
-        font: data.isRoot ? 'bold 12px sans-serif' : '12px sans-serif',
-        color: '#222',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        overflow: 'hidden',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      <Handle type="target" position={sides.target} style={handleStyle} />
-      {data.label}
-      <Handle type="source" position={sides.source} style={handleStyle} />
-    </div>
-  );
+const ENGINE_KIND = { system: 'primary', alias: 'alias', unknown: 'unknownEnd', collapsed: 'collapsed' } as const;
+
+const labelFor = (kind: CanvasNodeKind, node: CanvasNode): string => {
+  switch (kind) {
+    case 'collapsed':
+      return `+${String(node.hiddenCount)}`;
+    case 'unknown':
+      return '?';
+    default:
+      return node.key;
+  }
+};
+
+const sameData = (a: BoxData, b: BoxData): boolean =>
+  a.label === b.label &&
+  a.width === b.width &&
+  a.height === b.height &&
+  a.mode === b.mode &&
+  a.isRoot === b.isRoot &&
+  a.kind === b.kind;
+
+function toBoxNode(node: CanvasNode, mode: LayoutMode): BoxNode {
+  const kind = canvasNodeKind(node);
+  const { width, height } = nodeSizeForKind(ENGINE_KIND[kind], DEFAULT_ENGINE_OPTIONS);
+  const sides = SIDES[mode];
+  const point = (position: Position) =>
+    mode === 'radial' ? { x: width / 2, y: height / 2 } : handlePoint(position, width, height);
+  return {
+    id: node.key,
+    type: kind,
+    position: { x: node.x, y: node.y },
+    data: { label: labelFor(kind, node), width, height, mode, isRoot: node.isRoot === true, kind },
+    initialWidth: width,
+    initialHeight: height,
+    handles: [
+      { type: 'target', position: sides.target, ...point(sides.target), width: 1, height: 1 },
+      { type: 'source', position: sides.source, ...point(sides.source), width: 1, height: 1 },
+    ],
+  };
 }
 
-const NODE_TYPES: NodeTypes = { box: Box };
-
-export function movedNodes(dragged: readonly Pick<Node, 'id' | 'position'>[]): { key: string; x: number; y: number }[] {
+export function movedNodes(dragged: readonly Pick<Node, 'id' | 'position'>[]): MovedNode[] {
   return dragged.map((n) => ({ key: n.id, x: n.position.x, y: n.position.y }));
 }
+
+const APPLIED_CHANGES = new Set<NodeChange['type']>(['position', 'dimensions']);
 
 export function ReactFlowCanvas({
   nodes,
@@ -83,43 +76,44 @@ export function ReactFlowCanvas({
   onNodeSelect,
   onNodesMoved,
 }: CanvasAdapterProps) {
-  const flowNodes = useMemo<BoxNode[]>(
-    () =>
-      nodes.map((n) => {
-        const collapsed = n.hiddenCount !== undefined && n.hiddenCount !== null;
-        const { width, height } = nodeSizeForKind(
-          collapsed ? 'collapsed' : n.isAlias ? 'alias' : 'primary',
-          DEFAULT_ENGINE_OPTIONS,
-        );
-        const sides = SIDES[mode];
-        const centred = mode === 'radial';
-        const point = (position: Position) =>
-          centred ? { x: width / 2, y: height / 2 } : handlePoint(position, width, height);
-        return {
-          id: n.key,
-          type: 'box',
-          position: { x: n.x, y: n.y },
-          data: {
-            label: collapsed ? `+${String(n.hiddenCount)}` : n.key,
-            width,
-            height,
-            mode,
-            isRoot: n.isRoot === true,
-          },
-          initialWidth: width,
-          initialHeight: height,
-          handles: [
-            { type: 'target', position: sides.target, ...point(sides.target), width: 1, height: 1 },
-            { type: 'source', position: sides.source, ...point(sides.source), width: 1, height: 1 },
-          ],
-        };
-      }),
-    [nodes, mode],
-  );
+  const cache = useRef(new Map<string, BoxNode>());
+  const baseNodes = useMemo<BoxNode[]>(() => {
+    const next = new Map<string, BoxNode>();
+    const built = nodes.map((n) => {
+      const fresh = toBoxNode(n, mode);
+      const previous = cache.current.get(n.key);
+      const reuse =
+        previous !== undefined &&
+        previous.position.x === fresh.position.x &&
+        previous.position.y === fresh.position.y &&
+        previous.type === fresh.type &&
+        sameData(previous.data, fresh.data);
+      const chosen = reuse ? previous : fresh;
+      next.set(n.key, chosen);
+      return chosen;
+    });
+    cache.current = next;
+    return built;
+  }, [nodes, mode]);
+
+  const [shownBase, setShownBase] = useState(baseNodes);
+  const [flowNodes, setFlowNodes] = useState(baseNodes);
+  if (shownBase !== baseNodes) {
+    setShownBase(baseNodes);
+    setFlowNodes(baseNodes);
+  }
+
+  const onNodesChange = useCallback((changes: NodeChange<BoxNode>[]) => {
+    const applicable = changes.filter((change) => APPLIED_CHANGES.has(change.type));
+    if (applicable.length > 0) {
+      setFlowNodes((current) => applyNodeChanges(applicable, current));
+    }
+  }, []);
+
   const flowEdges = useMemo<Edge[]>(
     () =>
       edges.map((e) => ({
-        id: e.connectionId,
+        id: String(e.connectionId),
         source: e.sourceKey,
         target: e.targetKey,
         type: mode === 'radial' ? 'straight' : 'default',
@@ -127,16 +121,36 @@ export function ReactFlowCanvas({
     [edges, mode],
   );
 
+  const highlight = useRef(createHighlightStore()).current;
+  const groups = useMemo(() => highlightGroups(nodes), [nodes]);
+  const select = useCallback(
+    (key: string | null) => {
+      highlight.set(key, key === null ? [] : (groups.get(key) ?? []));
+    },
+    [highlight, groups],
+  );
+
   return (
-    <ReactFlow
-      nodes={flowNodes}
-      edges={flowEdges}
-      nodeTypes={NODE_TYPES}
-      onlyRenderVisibleElements={false}
-      onNodeClick={(_, node) => onNodeSelect(node.id)}
-      onNodeDragStop={(_, _node, dragged) => onNodesMoved(movedNodes(dragged))}
-    >
-      {children}
-    </ReactFlow>
+    <HighlightContext.Provider value={highlight}>
+      <ReactFlow
+        nodes={flowNodes}
+        edges={flowEdges}
+        nodeTypes={NODE_TYPES}
+        onlyRenderVisibleElements={false}
+        onNodesChange={onNodesChange}
+        onNodeClick={(_, node) => {
+          select(node.id);
+          onNodeSelect(node.id);
+        }}
+        onPaneClick={() => {
+          select(null);
+        }}
+        onNodeDragStop={(_, _node, dragged) => {
+          onNodesMoved(movedNodes(dragged));
+        }}
+      >
+        {children}
+      </ReactFlow>
+    </HighlightContext.Provider>
   );
 }
