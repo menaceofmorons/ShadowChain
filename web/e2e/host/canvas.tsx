@@ -4,6 +4,7 @@ import { ReactFlowProvider, useReactFlow, useStoreApi, ViewportPortal } from '@x
 import {
   applyGesture,
   buildChainTree,
+  collectCanvasEdges,
   createMapSession,
   createPositionStore,
   DEFAULT_ENGINE_OPTIONS,
@@ -20,8 +21,12 @@ import {
   type CanvasEdge,
   type CanvasGesture,
   type CanvasNode,
+  type ChainConnection,
   type ChainGraph,
   type ChainNode,
+  type ConnectionSize,
+  type LifeStage,
+  type MassStatus,
   type LayoutMode,
   type MapSession,
   type PositionsBatch,
@@ -131,22 +136,6 @@ function ringGuides(root: ChainNode, nodes: readonly CanvasNode[]): Pick<Scene, 
   return { centre, guides: sums.slice(1).map((sum) => ({ radius: sum.total / sum.count })) };
 }
 
-function collectEdges(root: ChainNode): CanvasEdge[] {
-  const edges: CanvasEdge[] = [];
-  const visit = (node: ChainNode): void => {
-    for (const child of node.children) {
-      edges.push({
-        connectionId: child.parentEdge?.connectionId ?? -edges.length - 1,
-        sourceKey: node.keyString,
-        targetKey: child.keyString,
-      });
-      visit(child);
-    }
-  };
-  visit(root);
-  return edges;
-}
-
 function collapseTargets(root: ChainNode, count: number): string[] {
   const targets: string[] = [];
   const visit = (node: ChainNode): void => {
@@ -177,9 +166,39 @@ function fixtureGraph(): ChainGraph {
   };
 }
 
+const LEGEND_MASSES: readonly MassStatus[] = ['fresh', 'reduced', 'critical'];
+const LEGEND_STAGES: readonly LifeStage[] = [1, 2, 3, 4];
+const LEGEND_SIZES: readonly ConnectionSize[] = ['small', 'medium', 'large', 'freighter', 'capital', 'unknown'];
+
+function legendGraph(): ChainGraph {
+  const combos = LEGEND_MASSES.flatMap((massStatus) => LEGEND_STAGES.map((lifeStage) => ({ massStatus, lifeStage })));
+  const connections: ChainConnection[] = combos.map((combo, index) => ({
+    id: index + 1,
+    createdAt: index + 1,
+    endA: FIXTURE_ROOT_SYSTEM_ID,
+    endB: index + 2,
+    ...combo,
+    size: LEGEND_SIZES[index % LEGEND_SIZES.length] as ConnectionSize,
+  }));
+  const parallel: ChainConnection = {
+    id: combos.length + 1,
+    createdAt: combos.length + 1,
+    endA: FIXTURE_ROOT_SYSTEM_ID,
+    endB: 2,
+    massStatus: 'critical',
+    lifeStage: 4,
+    size: 'capital',
+  };
+  return {
+    systems: [{ id: FIXTURE_ROOT_SYSTEM_ID }, ...combos.map((_, index) => ({ id: index + 2 }))],
+    connections: [...connections, parallel],
+  };
+}
+
 async function createRig(): Promise<Rig> {
-  const useFixture = fixture === 'wanderer553' || fixture === 'wanderer98';
-  const graph = useFixture ? fixtureGraph() : generateChain({ nodeCount: size, seed });
+  const useFixture = fixture === 'wanderer553' || fixture === 'wanderer98' || fixture === 'legend';
+  const graph =
+    fixture === 'legend' ? legendGraph() : useFixture ? fixtureGraph() : generateChain({ nodeCount: size, seed });
   const rootSystemId = useFixture ? FIXTURE_ROOT_SYSTEM_ID : SYNTHETIC_ROOT_SYSTEM_ID;
   const store = createPositionStore({
     tabId: 'e2e',
@@ -218,7 +237,7 @@ function sceneOf(session: MapSession): Scene {
   window.__canvas.placed = session.placedNodes().map((p) => ({ key: p.nodeKey, x: p.x, y: p.y, source: p.source }));
   window.__canvas.rootOffset = session.store.rootOffset();
   window.__canvas.sceneVersion += 1;
-  return { nodes, edges: collectEdges(tree.root), ...rings };
+  return { nodes, edges: collectCanvasEdges(tree.root, session.graph().connections), ...rings };
 }
 
 function FitOnChange({ fitToken }: { fitToken: number }) {

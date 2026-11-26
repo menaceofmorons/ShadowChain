@@ -1,14 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import {
-  applyNodeChanges,
-  Position,
-  ReactFlow,
-  SelectionMode,
-  type Edge,
-  type Node,
-  type NodeChange,
-} from '@xyflow/react';
+import { applyNodeChanges, Position, ReactFlow, SelectionMode, type Node, type NodeChange } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { buildFlowEdges, EDGE_TYPES, type ConnectorEdgeType, type EdgeCache } from './edges';
 import { DEFAULT_ENGINE_OPTIONS, nodeSizeForKind } from '../layout/engineOptions';
 import type { LayoutMode } from '../layout/types';
 import type { CanvasAdapterProps, CanvasNode, MovedNode } from './canvasAdapter';
@@ -209,16 +202,18 @@ export function ReactFlowCanvas({
     }
   };
 
-  const flowEdges = useMemo<Edge[]>(
-    () =>
-      edges.map((e) => ({
-        id: String(e.connectionId),
-        source: e.sourceKey,
-        target: e.targetKey,
-        type: mode === 'radial' ? 'straight' : 'default',
-      })),
-    [edges, mode],
-  );
+  const edgeCache = useRef<EdgeCache>(new Map());
+  const flowEdges = useMemo<ConnectorEdgeType[]>(() => {
+    const built = buildFlowEdges(
+      nodes,
+      edges,
+      mode,
+      (node) => nodeSizeForKind(ENGINE_KIND[canvasNodeKind(node)], DEFAULT_ENGINE_OPTIONS),
+      edgeCache.current,
+    );
+    edgeCache.current = built.cache;
+    return built.edges;
+  }, [edges, nodes, mode]);
 
   const highlight = useRef(createHighlightStore()).current;
   const groups = useMemo(() => highlightGroups(nodes), [nodes]);
@@ -235,6 +230,7 @@ export function ReactFlowCanvas({
         nodes={flowNodes}
         edges={flowEdges}
         nodeTypes={NODE_TYPES}
+        edgeTypes={EDGE_TYPES}
         onlyRenderVisibleElements={false}
         onNodesChange={onNodesChange}
         selectionKeyCode={SELECTION_KEY_CODE}
