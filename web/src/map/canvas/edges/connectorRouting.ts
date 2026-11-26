@@ -23,39 +23,22 @@ export interface ConnectorPath {
   readonly badge: Point;
 }
 
-export interface BusRank {
-  readonly rank: number;
-  readonly runs: number;
-}
-
 export interface ConnectorInput {
   readonly mode: LayoutMode;
   readonly source: Rect;
   readonly target: Rect;
-  readonly slotStart: number;
-  readonly slots: number;
   readonly paths: number;
-  readonly bus?: readonly BusRank[];
-}
-
-export interface SiblingItem {
-  readonly target: Rect;
-  readonly paths: number;
-}
-
-export interface SiblingPlan {
-  readonly slotStart: number;
-  readonly bus: readonly BusRank[];
 }
 
 export const CONNECTOR_PARALLEL_GAP = 6;
-export const CONNECTOR_TARGET_SPACING = 8;
+export const CONNECTOR_TARGET_SPACING = 18;
 export const CONNECTOR_RADIAL_SPACING = 12;
-export const CONNECTOR_MIN_CONTROL = 16;
+export const CONNECTOR_TRUNK_OFFSET = 24;
 export const CONNECTOR_BUS_MARGIN = 10;
-export const CONNECTOR_BUS_MAX_STEP = 8;
+const CONNECTOR_PARALLEL_LEVEL = 8;
+const CONNECTOR_DROP_CLEARANCE = 22;
+const CONNECTOR_BADGE_CLEARANCE = 12;
 export const CONNECTOR_CORNER_RADIUS = 10;
-const STRAIGHT_ACROSS = 2;
 const CONNECTOR_TARGET_EDGE_INSET = 4;
 const BADGE_SAMPLES = 24;
 
@@ -76,6 +59,18 @@ export function samplePath(path: ConnectorPath, stepsPerSegment: number): Point[
   path.segments.forEach((segment, segmentIndex) => {
     for (let i = segmentIndex === 0 ? 0 : 1; i <= stepsPerSegment; i += 1) {
       points.push(cubicAt(segment, i / stepsPerSegment));
+    }
+  });
+  return points;
+}
+
+export function samplePathEvery(path: ConnectorPath, step: number): Point[] {
+  const points: Point[] = [];
+  path.segments.forEach((segment, segmentIndex) => {
+    const chord = Math.hypot(segment[3].x - segment[0].x, segment[3].y - segment[0].y);
+    const steps = Math.max(8, Math.ceil(chord / step));
+    for (let i = segmentIndex === 0 ? 0 : 1; i <= steps; i += 1) {
+      points.push(cubicAt(segment, i / steps));
     }
   });
   return points;
@@ -163,97 +158,94 @@ const FRAMES: Record<'top-down' | 'left-to-right', Frame> = {
   },
 };
 
-const anchorAcross = (frame: Frame, source: Rect, slot: number, slots: number): number =>
-  frame.acrossStart(source) + (frame.acrossSize(source) * (slot + 1)) / (slots + 1);
-
 const targetAcross = (frame: Frame, target: Rect, pathIndex: number, paths: number): number => {
   const room = Math.max(0, frame.acrossSize(target) / 2 - CONNECTOR_TARGET_EDGE_INSET);
   const offset = Math.max(-room, Math.min(room, spreadOffset(pathIndex, paths, CONNECTOR_TARGET_SPACING)));
   return frame.acrossStart(target) + frame.acrossSize(target) / 2 + offset;
 };
 
-export function planSiblings(
-  mode: 'top-down' | 'left-to-right',
-  source: Rect,
-  items: readonly SiblingItem[],
-): { slots: number; plans: SiblingPlan[] } {
-  const frame = FRAMES[mode];
-  const slots = items.reduce((sum, item) => sum + Math.max(1, item.paths), 0);
-  const runs: { item: number; path: number; shift: number; target: number }[] = [];
-  const slotStarts: number[] = [];
-  let slot = 0;
-  items.forEach((item, itemIndex) => {
-    slotStarts.push(slot);
-    const paths = Math.max(1, item.paths);
-    for (let path = 0; path < paths; path += 1) {
-      const target = targetAcross(frame, item.target, path, paths);
-      runs.push({ item: itemIndex, path, shift: target - anchorAcross(frame, source, slot, slots), target });
-      slot += 1;
-    }
-  });
-  const bus: BusRank[][] = items.map((item) =>
-    Array.from({ length: Math.max(1, item.paths) }, () => ({ rank: 0, runs: 1 })),
-  );
-  for (const sign of [-1, 1]) {
-    const members = runs
-      .filter(({ shift }) => Math.sign(shift) === sign && Math.abs(shift) >= STRAIGHT_ACROSS)
-      .sort((a, b) => sign * (b.target - a.target));
-    members.forEach(({ item, path }, rank) => {
-      (bus[item] as BusRank[])[path] = { rank, runs: members.length };
-    });
-  }
-  return { slots, plans: slotStarts.map((slotStart, i) => ({ slotStart, bus: bus[i] as BusRank[] })) };
+function dropBadge(frame: Frame, from: number, alongTo: number, across: number, fraction: number): Point {
+  const stop = Math.max(from, alongTo - CONNECTOR_BADGE_CLEARANCE);
+  return frame.point(from + (stop - from) * fraction, across);
 }
 
-function smoothPath(
+function busRoute(
   frame: Frame,
-  alongFrom: number,
-  acrossFrom: number,
-  alongTo: number,
-  acrossTo: number,
+  line: { alongFrom: number; acrossFrom: number; alongTo: number; acrossTo: number },
+  bus: number,
+  radii: { first: number; second: number },
+  fraction: number,
 ): ConnectorPath {
-  const reach = Math.max(Math.abs(alongTo - alongFrom) / 2, CONNECTOR_MIN_CONTROL);
-  const direction = alongTo >= alongFrom ? 1 : -1;
-  const cubic: Cubic = [
-    frame.point(alongFrom, acrossFrom),
-    frame.point(alongFrom + direction * reach, acrossFrom),
-    frame.point(alongTo - direction * reach, acrossTo),
-    frame.point(alongTo, acrossTo),
+  const { alongFrom, acrossFrom, alongTo, acrossTo } = line;
+  const sign = Math.sign(acrossTo - acrossFrom);
+  const at = (along: number, across: number): Point => frame.point(along, across);
+  const { first, second } = radii;
+  const drop = lineSegment(at(bus + second, acrossTo), at(alongTo, acrossTo));
+  const segments: Cubic[] = [
+    lineSegment(at(alongFrom, acrossFrom), at(bus - first, acrossFrom)),
+    cornerSegment(at(bus - first, acrossFrom), at(bus, acrossFrom), at(bus, acrossFrom + sign * first)),
+    lineSegment(at(bus, acrossFrom + sign * first), at(bus, acrossTo - sign * second)),
+    cornerSegment(at(bus, acrossTo - sign * second), at(bus, acrossTo), at(bus + second, acrossTo)),
+    drop,
   ];
-  return finish([cubic]);
+  return { ...finish(segments), badge: dropBadge(frame, bus + second, alongTo, acrossTo, fraction) };
+}
+
+function snappedPath(
+  frame: Frame,
+  line: { alongFrom: number; acrossFrom: number; alongTo: number },
+  target: Rect,
+  pathIndex: number,
+  paths: number,
+  bus: number,
+): ConnectorPath {
+  const room = Math.max(0, frame.acrossSize(target) / 2 - CONNECTOR_TARGET_EDGE_INSET);
+  const centre = frame.acrossStart(target) + frame.acrossSize(target) / 2;
+  const lateral = (index: number): number => {
+    const wanted = centre + spreadOffset(index, paths, CONNECTOR_TARGET_SPACING);
+    return Math.max(centre - room, Math.min(centre + room, wanted)) - line.acrossFrom;
+  };
+  const own = lateral(pathIndex);
+  const fraction = (pathIndex + 1) / (paths + 1);
+  const end = line.acrossFrom + own;
+  if (Math.abs(own) < 1) {
+    const drop = lineSegment(frame.point(bus, end), frame.point(line.alongTo, end));
+    const stem = lineSegment(frame.point(line.alongFrom, line.acrossFrom), frame.point(bus, end));
+    return { ...finish([stem, drop]), badge: dropBadge(frame, bus, line.alongTo, end, fraction) };
+  }
+  const sameSide = Array.from({ length: paths }, (_, k) => Math.abs(lateral(k)))
+    .filter((size, k) => Math.sign(lateral(k)) === Math.sign(own) && size > 0)
+    .sort((x, y) => x - y);
+  const farther = sameSide.length - 1 - sameSide.indexOf(Math.abs(own));
+  const level = Math.min(bus + CONNECTOR_PARALLEL_LEVEL * (1 + farther), line.alongTo - CONNECTOR_DROP_CLEARANCE);
+  const radius = Math.min(CONNECTOR_CORNER_RADIUS, Math.abs(own) / 2, line.alongTo - level);
+  return busRoute(frame, { ...line, acrossTo: end }, level, { first: radius, second: radius }, fraction);
 }
 
 function treePath(input: ConnectorInput, pathIndex: number): ConnectorPath {
-  const { mode, source, target, slotStart, slots, paths } = input;
+  const { mode, source, target, paths } = input;
   const frame = FRAMES[mode as 'top-down' | 'left-to-right'];
   const alongFrom = frame.alongEnd(source);
   const alongTo = frame.alongStart(target);
-  const acrossFrom = anchorAcross(frame, source, slotStart + pathIndex, slots);
+  const acrossFrom = frame.acrossStart(source) + frame.acrossSize(source) / 2;
   const acrossTo = targetAcross(frame, target, pathIndex, paths);
-  const shift = acrossTo - acrossFrom;
-  const sign = Math.sign(shift);
-  const bandEnd = frame.alongCentre(source) + frame.alongHalf;
-  const busMin = bandEnd + CONNECTOR_BUS_MARGIN;
-  const busMax = Math.min(
-    bandEnd + DEFAULT_ENGINE_OPTIONS.levelSpacing - CONNECTOR_BUS_MARGIN,
-    alongTo - CONNECTOR_BUS_MARGIN,
+  const shifts = Array.from({ length: paths }, (_, k) => targetAcross(frame, target, k, paths) - acrossFrom);
+  const branching = shifts.every(
+    (shift) => Math.abs(shift) >= 2 * CONNECTOR_CORNER_RADIUS && Math.sign(shift) === Math.sign(shifts[0] as number),
   );
-  if (Math.abs(shift) < STRAIGHT_ACROSS || busMax - busMin < 1) {
-    return smoothPath(frame, alongFrom, acrossFrom, alongTo, acrossTo);
+  const bandEnd = frame.alongCentre(source) + frame.alongHalf;
+  const bus = Math.min(bandEnd + CONNECTOR_TRUNK_OFFSET, alongTo - CONNECTOR_BUS_MARGIN);
+  if (!branching || bus - alongFrom < CONNECTOR_CORNER_RADIUS) {
+    return snappedPath(frame, { alongFrom, acrossFrom, alongTo }, target, pathIndex, paths, bus);
   }
-  const { rank, runs } = input.bus?.[pathIndex] ?? { rank: 0, runs: 1 };
-  const step = runs > 1 ? Math.min(CONNECTOR_BUS_MAX_STEP, (busMax - busMin) / (runs - 1)) : 0;
-  const bus = busMin + (busMax - busMin - step * (runs - 1)) / 2 + rank * step;
-  const radius = Math.min(CONNECTOR_CORNER_RADIUS, Math.abs(shift) / 2, bus - alongFrom, alongTo - bus);
-  const at = (along: number, across: number): Point => frame.point(along, across);
-  const segments: Cubic[] = [
-    lineSegment(at(alongFrom, acrossFrom), at(bus - radius, acrossFrom)),
-    cornerSegment(at(bus - radius, acrossFrom), at(bus, acrossFrom), at(bus, acrossFrom + sign * radius)),
-    lineSegment(at(bus, acrossFrom + sign * radius), at(bus, acrossTo - sign * radius)),
-    cornerSegment(at(bus, acrossTo - sign * radius), at(bus, acrossTo), at(bus + radius, acrossTo)),
-    lineSegment(at(bus + radius, acrossTo), at(alongTo, acrossTo)),
-  ];
-  return finish(segments);
+  const second = Math.min(CONNECTOR_CORNER_RADIUS, alongTo - bus);
+  return busRoute(
+    frame,
+    { alongFrom, acrossFrom, alongTo, acrossTo },
+    bus,
+    { first: CONNECTOR_CORNER_RADIUS, second },
+    (pathIndex + 1) / (paths + 1),
+  );
 }
 
 function exitParameter(rect: Rect, direction: Point): number {

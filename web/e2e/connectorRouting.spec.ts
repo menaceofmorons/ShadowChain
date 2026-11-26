@@ -3,7 +3,6 @@ import type { CanvasHostState } from './host/canvas';
 import {
   BADGE_HEIGHT,
   BADGE_WIDTH,
-  CONNECTOR_ASSERTED_FAN,
   CONNECTOR_FAN_OUT_LENGTH,
   CONNECTOR_MIN_SEPARATION,
   CONNECTOR_SAMPLE_STEP,
@@ -80,51 +79,51 @@ const arcLengths = (points: readonly ConnectorPoint[]): number[] => {
   return lengths;
 };
 
-const beyondFanOut = (points: readonly ConnectorPoint[]): ConnectorPoint[] => {
-  const lengths = arcLengths(points);
-  return points.filter((_, i) => (lengths[i] as number) >= CONNECTOR_FAN_OUT_LENGTH);
+const SHARED_TRUNK = 0.35;
+
+const afterSplit = (a: readonly ConnectorPoint[], b: readonly ConnectorPoint[]): ConnectorPoint[] => {
+  let lastShared = -1;
+  a.forEach((point, i) => {
+    if (distanceToPolyline(point, b) < SHARED_TRUNK) {
+      lastShared = i;
+    }
+  });
+  const lengths = arcLengths(a);
+  const from = lengths[Math.max(lastShared, 0)] as number;
+  return a.filter((_, i) => i > lastShared && (lengths[i] as number) - from >= CONNECTOR_FAN_OUT_LENGTH);
 };
 
 export interface Measurement {
   minSeparation: number;
   worstPair: string;
-  wideFanMinSeparation: number;
-  wideFans: number;
   throughNode: string[];
   badgeOverNode: string[];
   connectors: number;
   widestFan: number;
 }
 
-const pathsOf = (connectors: readonly DrawnConnector[]): DrawnPath[] =>
-  connectors.flatMap((connector) => connector.paths);
-
 export function measure(scene: Scene): Measurement {
-  const bySource = new Map<string, DrawnConnector[]>();
+  const bySource = new Map<string, DrawnPath[]>();
   scene.connectors.forEach((connector) => {
-    bySource.set(connector.source, [...(bySource.get(connector.source) ?? []), connector]);
+    bySource.set(connector.source, [...(bySource.get(connector.source) ?? []), ...connector.paths]);
   });
   let minSeparation = Infinity;
   let worstPair = '';
-  let wideFanMinSeparation = Infinity;
-  let wideFans = 0;
   let widestFan = 0;
-  bySource.forEach((siblings) => {
-    const drawn = pathsOf(siblings);
+  bySource.forEach((drawn, source) => {
     widestFan = Math.max(widestFan, drawn.length);
-    const wide = drawn.length > CONNECTOR_ASSERTED_FAN;
-    wideFans += wide ? 1 : 0;
     for (let i = 0; i < drawn.length; i += 1) {
       for (let j = i + 1; j < drawn.length; j += 1) {
-        const a = beyondFanOut((drawn[i] as DrawnPath).points);
-        const b = beyondFanOut((drawn[j] as DrawnPath).points);
-        for (const point of a) {
-          const distance = distanceToPolyline(point, b);
-          if (wide) {
-            wideFanMinSeparation = Math.min(wideFanMinSeparation, distance);
-          } else if (distance < minSeparation) {
+        const a = (drawn[i] as DrawnPath).points;
+        const b = (drawn[j] as DrawnPath).points;
+        for (const point of [
+          ...afterSplit(a, b).map((p) => ({ p, other: b })),
+          ...afterSplit(b, a).map((p) => ({ p, other: a })),
+        ]) {
+          const distance = distanceToPolyline(point.p, point.other);
+          if (distance < minSeparation) {
             minSeparation = distance;
-            worstPair = `${siblings[0]?.source ?? ''}:${String(i)}/${String(j)}`;
+            worstPair = `${source}:${String(i)}/${String(j)}`;
           }
         }
       }
@@ -164,8 +163,6 @@ export function measure(scene: Scene): Measurement {
   return {
     minSeparation,
     worstPair,
-    wideFanMinSeparation,
-    wideFans,
     throughNode,
     badgeOverNode,
     connectors: scene.connectors.length,

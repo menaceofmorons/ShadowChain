@@ -3,13 +3,10 @@ import type { Edge, EdgeProps, EdgeTypes } from '@xyflow/react';
 import type { ConnectionEncoding } from '../../encoding';
 import type { LayoutMode } from '../../layout/types';
 import { BADGE_HEIGHT, BADGE_WIDTH } from './connectorBounds';
-import { rectFromHandle, routeConnector, type BusRank, type Size } from './connectorRouting';
+import { rectFromHandle, routeConnector, type Size } from './connectorRouting';
 
 export interface ConnectorData extends Record<string, unknown> {
   mode: LayoutMode;
-  slotStart: number;
-  slots: number;
-  bus: readonly BusRank[];
   sourceSize: Size;
   targetSize: Size;
   encodings: readonly ConnectionEncoding[];
@@ -35,9 +32,6 @@ export const ConnectorEdge = memo(function ConnectorEdge({
 }: EdgeProps<ConnectorEdgeType>) {
   const mode = data?.mode ?? 'top-down';
   const encodings = data?.encodings;
-  const slotStart = data?.slotStart ?? 0;
-  const slots = data?.slots ?? 1;
-  const bus = data?.bus;
   const sourceSize = data?.sourceSize;
   const targetSize = data?.targetSize;
   const paths = useMemo(() => {
@@ -48,12 +42,9 @@ export const ConnectorEdge = memo(function ConnectorEdge({
       mode,
       source: rectFromHandle(mode, 'source', { x: sourceX, y: sourceY }, sourceSize),
       target: rectFromHandle(mode, 'target', { x: targetX, y: targetY }, targetSize),
-      slotStart,
-      slots,
-      bus,
       paths: encodings?.length ?? 1,
     });
-  }, [mode, sourceX, sourceY, targetX, targetY, sourceSize, targetSize, slotStart, slots, bus, encodings]);
+  }, [mode, sourceX, sourceY, targetX, targetY, sourceSize, targetSize, encodings]);
 
   return (
     <g data-connector={id} data-source={source} data-target={target}>

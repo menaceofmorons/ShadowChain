@@ -1,14 +1,13 @@
 export { collectCanvasEdges, NEUTRAL_ENCODINGS } from './canvasEdges';
 export { ConnectorEdge, EDGE_TYPES, type ConnectorData, type ConnectorEdgeType } from './ConnectorEdge';
 export {
-  CONNECTOR_MIN_CONTROL,
   CONNECTOR_PARALLEL_GAP,
-  planSiblings,
   cubicAt,
   distanceToPolyline,
   rectFromHandle,
   routeConnector,
   samplePath,
+  samplePathEvery,
   type ConnectorInput,
   type ConnectorPath,
   type Point as ConnectorPoint,
