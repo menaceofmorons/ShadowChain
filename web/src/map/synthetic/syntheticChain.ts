@@ -1,4 +1,5 @@
 import type { ChainConnection, ChainGraph } from '../model/types';
+import { createAttributeStream, drawConnectionAttributes } from './connectionAttributes';
 import { createPrng } from './prng';
 
 export const SYNTHETIC_NODE_COUNTS = [50, 150, 250, 500] as const;
@@ -46,7 +47,8 @@ export const generateChain = (options: SyntheticChainOptions): ChainGraph => {
   for (let i = 0, n = extra(unknownEndRatio); i < n; i += 1) {
     add(1 + rng.int(nodeCount), null);
   }
-  return { systems, connections };
+  const attributeStream = createAttributeStream(seed);
+  return { systems, connections: connections.map((c) => ({ ...c, ...drawConnectionAttributes(attributeStream) })) };
 };
 
 export const generateAllSizes = (seed: number): readonly ChainGraph[] =>

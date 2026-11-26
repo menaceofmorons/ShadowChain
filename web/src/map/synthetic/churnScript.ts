@@ -1,4 +1,5 @@
 import type { ChainConnection, ChainGraph } from '../model/types';
+import { createAttributeStream, drawConnectionAttributes } from './connectionAttributes';
 import { createPrng } from './prng';
 
 export type ChurnOperation =
@@ -14,6 +15,7 @@ export interface ChurnOptions {
 export const generateChurnScript = (graph: ChainGraph, options: ChurnOptions): readonly ChurnOperation[] => {
   const { seed, operationCount, addRatio = 0.5 } = options;
   const rng = createPrng(seed);
+  const attributeStream = createAttributeStream(seed);
   const live = graph.connections.map((c) => c.id);
   let nextId = graph.connections.reduce((max, c) => Math.max(max, c.id), 0) + 1;
   let clock = graph.connections.reduce((max, c) => Math.max(max, c.createdAt), 0) + 1;
@@ -31,7 +33,13 @@ export const generateChurnScript = (graph: ChainGraph, options: ChurnOptions): r
     if (mustAdd || (!mustRemove && rng.chance(addRatio))) {
       const endA = pickSystem();
       const endB = rng.chance(0.15) ? null : pickOtherSystem(endA);
-      const connection: ChainConnection = { id: nextId++, createdAt: clock++, endA, endB };
+      const connection: ChainConnection = {
+        id: nextId++,
+        createdAt: clock++,
+        endA,
+        endB,
+        ...drawConnectionAttributes(attributeStream),
+      };
       live.push(connection.id);
       operations.push({ kind: 'add', connection });
     } else {
