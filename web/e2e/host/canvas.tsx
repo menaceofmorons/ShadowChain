@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ReactFlowProvider, useReactFlow, useStoreApi, ViewportPortal } from '@xyflow/react';
 import {
+  applyGesture,
   buildChainTree,
-  collapseChainTree,
-  createRegistryAdapter,
+  createMapSession,
+  createPositionStore,
   DEFAULT_ENGINE_OPTIONS,
   engineEntryForMode,
   generateChain,
@@ -14,11 +15,25 @@ import {
   renderCounts,
   resetRenderCounts,
   SYNTHETIC_ROOT_SYSTEM_ID,
+  wanderer553,
+  wanderer98,
   type CanvasEdge,
+  type CanvasGesture,
   type CanvasNode,
+  type ChainGraph,
   type ChainNode,
   type LayoutMode,
+  type MapSession,
+  type PositionsBatch,
+  type PositionStore,
 } from '../../src/map';
+
+export interface HostPlacement {
+  key: string;
+  x: number;
+  y: number;
+  source: 'auto' | 'manual';
+}
 
 export interface CanvasHostState {
   done: boolean;
@@ -32,6 +47,11 @@ export interface CanvasHostState {
   ringGuides: number;
   selectedKey: string | null;
   moved: { key: string; x: number; y: number }[];
+  gestures: string[];
+  batches: PositionsBatch[];
+  placed: HostPlacement[];
+  rootOffset: number;
+  sceneVersion: number;
 }
 
 export interface CanvasRenderProbe {
@@ -48,17 +68,20 @@ declare global {
 
 const params = new URLSearchParams(window.location.search);
 const modeParam = params.get('mode') ?? 'top-down';
-const mode = LAYOUT_MODES.find((candidate) => candidate === modeParam) ?? 'top-down';
+const initialMode = LAYOUT_MODES.find((candidate) => candidate === modeParam) ?? 'top-down';
 const size = Number(params.get('size') ?? 150);
 const seed = Number(params.get('seed') ?? 7);
 const collapse = Number(params.get('collapse') ?? 0);
+const fixture = params.get('fixture');
 const MIN_ZOOM = 0.02;
+const FIXTURE_ROOT_SYSTEM_ID = 1;
+const FIXTURE_NEW_SYSTEM_ID = 5;
 
 window.__canvas = {
   done: false,
   error: null,
-  mode,
-  engine: engineEntryForMode(mode).id,
+  mode: initialMode,
+  engine: engineEntryForMode(initialMode).id,
   nodeCount: 0,
   expectedNodeCount: 0,
   edgeCount: 0,
@@ -66,6 +89,11 @@ window.__canvas = {
   ringGuides: 0,
   selectedKey: null,
   moved: [],
+  gestures: [],
+  batches: [],
+  placed: [],
+  rootOffset: 0,
+  sceneVersion: 0,
 };
 
 window.__canvasRenders = { counts: renderCounts, reset: resetRenderCounts };
@@ -135,35 +163,69 @@ function collapseTargets(root: ChainNode, count: number): string[] {
   return targets;
 }
 
-async function buildScene(): Promise<Scene> {
-  const fullTree = buildChainTree(generateChain({ nodeCount: size, seed }), SYNTHETIC_ROOT_SYSTEM_ID);
-  const collapsedKeys = collapseTargets(fullTree.root, collapse);
-  const tree = collapseChainTree(fullTree, new Set(collapsedKeys));
-  const adapter = createRegistryAdapter();
-  try {
-    window.__canvas.expectedNodeCount = tree.nodes.length;
-    window.__canvas.collapsedCount = collapsedKeys.length;
-    const placed = await adapter.layout({ type: 'full', tree, mode, manualPositions: [], collapsedKeys });
-    const nodes = placed.map((p) => ({
-      key: p.nodeKey,
-      x: p.x,
-      y: p.y,
-      isAlias: p.alias,
-      hiddenCount: p.hiddenCount,
-      isRoot: p.nodeKey === tree.root.keyString,
-    }));
-    const rings = mode === 'radial' ? ringGuides(tree.root, nodes) : { centre: { x: 0, y: 0 }, guides: [] };
-    return { nodes, edges: collectEdges(tree.root), ...rings };
-  } finally {
-    adapter.dispose();
-  }
+interface Rig {
+  readonly session: MapSession;
+  readonly store: PositionStore;
+  readonly staleRevision: number;
+  readonly rootSystemId: number;
 }
 
-function FitOnChange({ scene }: { scene: Scene | null }) {
+function fixtureGraph(): ChainGraph {
+  return {
+    systems: wanderer553.graph.systems.filter((system) => system.id !== FIXTURE_NEW_SYSTEM_ID),
+    connections: wanderer553.graph.connections.filter((connection) => connection.endB !== FIXTURE_NEW_SYSTEM_ID),
+  };
+}
+
+async function createRig(): Promise<Rig> {
+  const useFixture = fixture === 'wanderer553' || fixture === 'wanderer98';
+  const graph = useFixture ? fixtureGraph() : generateChain({ nodeCount: size, seed });
+  const rootSystemId = useFixture ? FIXTURE_ROOT_SYSTEM_ID : SYNTHETIC_ROOT_SYSTEM_ID;
+  const store = createPositionStore({
+    tabId: 'e2e',
+    onBatch: (batch) => {
+      window.__canvas.batches = [...window.__canvas.batches, batch];
+    },
+  });
+  const collapsedKeys = collapseTargets(buildChainTree(graph, rootSystemId).root, collapse);
+  collapsedKeys.forEach((key) => {
+    store.setCollapsed(key, true);
+  });
+  window.__canvas.collapsedCount = collapsedKeys.length;
+  const session = createMapSession({ graph, rootSystemId, mode: initialMode, store });
+  await session.open();
+  return { session, store, staleRevision: store.snapshot().revision, rootSystemId };
+}
+
+function sceneOf(session: MapSession): Scene {
+  const tree = session.tree();
+  const collapsible = new Set(
+    tree.nodes
+      .filter((node) => node.kind === 'primary' && node !== tree.root && node.children.length > 0)
+      .map((node) => node.keyString),
+  );
+  const nodes = session.placedNodes().map((p) => ({
+    key: p.nodeKey,
+    x: p.x,
+    y: p.y,
+    isAlias: p.alias,
+    hiddenCount: p.hiddenCount,
+    isRoot: p.nodeKey === tree.root.keyString,
+    canCollapse: collapsible.has(p.nodeKey),
+  }));
+  const rings = session.mode() === 'radial' ? ringGuides(tree.root, nodes) : { centre: { x: 0, y: 0 }, guides: [] };
+  window.__canvas.expectedNodeCount = tree.nodes.length;
+  window.__canvas.placed = session.placedNodes().map((p) => ({ key: p.nodeKey, x: p.x, y: p.y, source: p.source }));
+  window.__canvas.rootOffset = session.store.rootOffset();
+  window.__canvas.sceneVersion += 1;
+  return { nodes, edges: collectEdges(tree.root), ...rings };
+}
+
+function FitOnChange({ fitToken }: { fitToken: number }) {
   const { fitView } = useReactFlow();
   const store = useStoreApi();
   useEffect(() => {
-    if (scene === null) {
+    if (fitToken === 0) {
       return;
     }
     const frame = requestAnimationFrame(() => {
@@ -178,31 +240,124 @@ function FitOnChange({ scene }: { scene: Scene | null }) {
     return () => {
       cancelAnimationFrame(frame);
     };
-  }, [scene, fitView, store]);
+  }, [fitToken, fitView, store]);
   return null;
 }
 
 function Host() {
+  const [rig, setRig] = useState<Rig | null>(null);
   const [scene, setScene] = useState<Scene | null>(null);
+  const [mode, setMode] = useState<LayoutMode>(initialMode);
+  const [fitToken, setFitToken] = useState(0);
+
   useEffect(() => {
-    buildScene()
-      .then(setScene)
+    let active: Rig | null = null;
+    let unsubscribe = (): void => undefined;
+    createRig()
+      .then((created) => {
+        active = created;
+        unsubscribe = created.session.subscribe(() => {
+          setScene(sceneOf(created.session));
+        });
+        setRig(created);
+        setScene(sceneOf(created.session));
+        setFitToken((token) => token + 1);
+      })
       .catch((error: unknown) => {
         window.__canvas.error = error instanceof Error ? error.message : String(error);
         window.__canvas.done = true;
       });
+    return () => {
+      unsubscribe();
+      active?.session.dispose();
+    };
   }, []);
+
+  const run = (task: Promise<unknown> | undefined): void => {
+    task?.catch((error: unknown) => {
+      window.__canvas.error = error instanceof Error ? error.message : String(error);
+    });
+  };
+
+  const changeMode = (next: LayoutMode): void => {
+    run(
+      rig?.session.setMode(next).then(() => {
+        window.__canvas.mode = next;
+        window.__canvas.engine = engineEntryForMode(next).id;
+        setMode(next);
+        setFitToken((token) => token + 1);
+      }),
+    );
+  };
+
+  const addConnection = (): void => {
+    if (rig === null) {
+      return;
+    }
+    const { rootSystemId, session } = rig;
+    const current = session.graph();
+    const systemId = Math.max(...current.systems.map((system) => system.id)) + 1;
+    const connectionId = Math.max(...current.connections.map((connection) => connection.id)) + 1;
+    run(
+      session.addConnection({ id: connectionId, createdAt: connectionId, endA: rootSystemId, endB: systemId }, [
+        { id: systemId },
+      ]),
+    );
+  };
+
+  const staleUpdate = (): void => {
+    if (rig === null) {
+      return;
+    }
+    rig.store.mergeUpdate({
+      basedOnRevision: rig.staleRevision,
+      positions: wanderer98.staleUpdate.positions.map((p) => ({ ...p, source: 'manual', collapsed: false })),
+    });
+  };
+
+  const onGesture = (gesture: CanvasGesture): void => {
+    window.__canvas.gestures = [...window.__canvas.gestures, gesture.type];
+    if (rig !== null) {
+      run(applyGesture(rig.session, gesture));
+    }
+  };
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'sans-serif' }}>
       <div style={{ padding: 8, display: 'flex', gap: 16 }}>
         {LAYOUT_MODES.map((candidate) => (
-          <a
+          <button
             key={candidate}
-            href={`?mode=${candidate}&size=${String(size)}&seed=${String(seed)}&collapse=${String(collapse)}`}
+            data-testid={`mode-${candidate}`}
+            onClick={() => {
+              changeMode(candidate);
+            }}
           >
             {candidate === mode ? `[${candidate}]` : candidate}
-          </a>
+          </button>
         ))}
+        <button
+          data-testid="tidy"
+          onClick={() => {
+            run(rig?.session.tidy());
+          }}
+        >
+          Tidy
+        </button>
+        <button data-testid="add-connection" onClick={addConnection}>
+          Add connection
+        </button>
+        <button data-testid="stale-update" onClick={staleUpdate}>
+          Stale update
+        </button>
+        <button
+          data-testid="flush"
+          onClick={() => {
+            rig?.store.flush();
+          }}
+        >
+          Flush
+        </button>
         <span>
           engine: {engineEntryForMode(mode).id}, nodes: {size}, seed: {seed}
         </span>
@@ -219,6 +374,7 @@ function Host() {
             onNodesMoved={(moved) => {
               window.__canvas.moved = [...moved];
             }}
+            onGesture={onGesture}
           >
             <ViewportPortal>
               {scene?.guides.map((guide, index) => (
@@ -240,7 +396,7 @@ function Host() {
               ))}
             </ViewportPortal>
           </ReactFlowCanvas>
-          <FitOnChange scene={scene} />
+          <FitOnChange fitToken={fitToken} />
         </ReactFlowProvider>
       </div>
     </div>
