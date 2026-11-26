@@ -7,7 +7,7 @@ import { placementFlags } from '../../placementFlags';
 import type { IncrementalLayoutRequest, LayoutEngine, LayoutMode, LayoutRequest, PlacedNode } from '../../types';
 import { placeRadialIncrementally } from './radialIncremental';
 import { RADIAL_MAX_GAP_RATIO, smoothRingRadii } from './radialLegibility';
-import { carryRadialSubtrees } from './radialRelativeSubtrees';
+import { carriedGroups, carryRadialSubtrees } from './radialRelativeSubtrees';
 
 const RANDOM_SEED = '1';
 const RING_STEP_GROWTH = 1.03;
@@ -341,6 +341,35 @@ const overlapsAny = (
   });
 };
 
+const REPACK_TOLERANCE = 1;
+
+function needsRepack(
+  head: string,
+  members: readonly string[],
+  deferred: ReadonlySet<string>,
+  fresh: ReadonlyMap<string, PlacedNode>,
+  previous: ReadonlyMap<string, PlacedNode>,
+): boolean {
+  if (members.some((key) => deferred.has(key))) {
+    return true;
+  }
+  const headBefore = previous.get(head);
+  const headFresh = fresh.get(head);
+  if (headBefore === undefined || headFresh === undefined) {
+    return false;
+  }
+  return members.some((key) => {
+    const before = previous.get(key);
+    const next = fresh.get(key);
+    return (
+      before !== undefined &&
+      next !== undefined &&
+      (Math.abs(before.x - headBefore.x - (next.x - headFresh.x)) > REPACK_TOLERANCE ||
+        Math.abs(before.y - headBefore.y - (next.y - headFresh.y)) > REPACK_TOLERANCE)
+    );
+  });
+}
+
 export function createElkEngine(overrides: Partial<EngineOptions> = {}): LayoutEngine {
   const options = resolveEngineOptions(overrides);
   const elk = new ELK();
@@ -394,14 +423,23 @@ export function createElkEngine(overrides: Partial<EngineOptions> = {}): LayoutE
       });
     }
     applyManual(placed, request);
-    if (deferred.size > 0) {
+    const groups = carriedGroups(request.tree.root, new Set(request.manualPositions.map((p) => p.nodeKey)));
+    if (deferred.size > 0 || (groups.size > 0 && request.removedNodeKeys.length > 0)) {
       const fresh = await freshLayout(request);
       const carried = carryRadialSubtrees(request.tree.root, fresh, request.manualPositions);
-      for (const key of deferred) {
-        const spot = carried.get(key) as { x: number; y: number };
-        placed.set(key, { ...(fresh.get(key) as PlacedNode), x: toHundredths(spot.x), y: toHundredths(spot.y) });
+      const repacked = new Set(deferred);
+      const previous = new Map(request.previous.map((node) => [node.nodeKey, node]));
+      for (const [head, members] of groups) {
+        if (members.length > 0 && placed.has(head) && needsRepack(head, members, deferred, fresh, previous)) {
+          members.forEach((key) => repacked.add(key));
+        }
       }
-      if (overlapsAny(request, placed, deferred, options)) {
+      for (const key of repacked) {
+        const spot = carried.get(key) as { x: number; y: number };
+        const base = deferred.has(key) ? (fresh.get(key) as PlacedNode) : (placed.get(key) as PlacedNode);
+        placed.set(key, { ...base, x: toHundredths(spot.x), y: toHundredths(spot.y) });
+      }
+      if (overlapsAny(request, placed, repacked, options)) {
         return null;
       }
     }

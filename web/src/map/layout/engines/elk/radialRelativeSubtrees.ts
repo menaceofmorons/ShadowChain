@@ -38,3 +38,22 @@ export function carryRadialSubtrees(
   visit(root, undefined);
   return result;
 }
+
+export function carriedGroups(root: ChainNode, manualKeys: ReadonlySet<string>): Map<string, string[]> {
+  const groups = new Map<string, string[]>();
+  const visit = (node: ChainNode, head: string | null): void => {
+    for (const child of node.children) {
+      if (manualKeys.has(child.keyString)) {
+        groups.set(child.keyString, []);
+        visit(child, child.keyString);
+      } else {
+        if (head !== null) {
+          (groups.get(head) as string[]).push(child.keyString);
+        }
+        visit(child, head);
+      }
+    }
+  };
+  visit(root, null);
+  return groups;
+}

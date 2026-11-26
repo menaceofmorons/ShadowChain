@@ -255,6 +255,81 @@ for (const size of SIZES) {
     }
   });
 
+  describe(`radial ${String(size)} nodes: removals under a manual node repack the carried descendants`, () => {
+    const edgesCross = (tree: ChainTree, placed: readonly PlacedNode[]): number => {
+      type Point = { x: number; y: number };
+      const nodes = byKey(placed);
+      const side = (a: Point, b: Point, c: Point): number =>
+        Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
+      const edges = tree.nodes.flatMap((node) =>
+        node.children.map((child) => ({
+          ids: [node.keyString, child.keyString],
+          a: centreOf(nodes.get(node.keyString) as PlacedNode),
+          b: centreOf(nodes.get(child.keyString) as PlacedNode),
+        })),
+      );
+      let crossings = 0;
+      edges.forEach((first, i) => {
+        for (const second of edges.slice(i + 1)) {
+          if (new Set([...first.ids, ...second.ids]).size === 4) {
+            if (
+              side(first.a, first.b, second.a) !== side(first.a, first.b, second.b) &&
+              side(second.a, second.b, first.a) !== side(second.a, second.b, first.b)
+            ) {
+              crossings += 1;
+            }
+          }
+        }
+      });
+      return crossings;
+    };
+
+    it('a removed carried leaf leaves the rest of the group at its fresh relative shape, clear of others', async () => {
+      const tree = treeOf(graph);
+      const previous = await layoutOf(full(tree));
+      const target = interior(tree);
+      const start = byKey(previous).get(target.keyString) as PlacedNode;
+      const manual = [{ nodeKey: target.keyString, x: start.x + OFFSET.x, y: start.y + OFFSET.y }];
+      const moved = await layoutOf(incremental(tree, previous, { manualPositions: manual }));
+      const withoutLeaf = (node: ChainNode): ChainTree =>
+        treeOf({
+          systems: graph.systems,
+          connections: graph.connections.filter(
+            (c) => c.id !== (node.parentEdge as NonNullable<ChainNode['parentEdge']>).connectionId,
+          ),
+        });
+      const leaf = subtreeKeys(target)
+        .map((key) => tree.nodes.find((node) => node.keyString === key) as ChainNode)
+        .find(
+          (node) =>
+            node.kind === 'primary' &&
+            node.children.length === 0 &&
+            node.parentEdge !== null &&
+            node.parentEdge.parallelConnectionIds.length === 0 &&
+            !withoutLeaf(node).nodes.some((n) => n.keyString === node.keyString),
+        ) as ChainNode;
+      const shrunk = withoutLeaf(leaf);
+      const placed = await layoutOf(
+        incremental(shrunk, moved, {
+          manualPositions: manual,
+          removedNodeKeys: tree.nodes
+            .map((n) => n.keyString)
+            .filter((k) => !shrunk.nodes.some((n) => n.keyString === k)),
+        }),
+      );
+      const expected = byKey(await layoutOf(full(shrunk, manual)));
+      expect(placed).toHaveLength(shrunk.nodes.length);
+      for (const key of [target.keyString, ...subtreeKeys(target)]) {
+        const node = shrunk.nodes.find((n) => n.keyString === key);
+        if (node !== undefined) {
+          near(byKey(placed).get(key), expected.get(key) as PlacedNode);
+        }
+      }
+      expect(countOverlaps(placed)).toBe(0);
+      expect(edgesCross(shrunk, placed)).toBeLessThanOrEqual(edgesCross(shrunk, [...expected.values()]));
+    });
+  });
+
   describe(`radial ${String(size)} nodes: collapse lays a branch out as one +N node`, () => {
     it('the +N leaf carries the hidden count, the target carries the collapsed state, rings hold', async () => {
       const tree = treeOf(graph);
