@@ -11,6 +11,8 @@ import {
   LAYOUT_MODES,
   nodeSize,
   ReactFlowCanvas,
+  renderCounts,
+  resetRenderCounts,
   SYNTHETIC_ROOT_SYSTEM_ID,
   type CanvasEdge,
   type CanvasNode,
@@ -28,11 +30,19 @@ export interface CanvasHostState {
   edgeCount: number;
   collapsedCount: number;
   ringGuides: number;
+  selectedKey: string | null;
+  moved: { key: string; x: number; y: number }[];
+}
+
+export interface CanvasRenderProbe {
+  counts: () => Record<string, number>;
+  reset: () => void;
 }
 
 declare global {
   interface Window {
     __canvas: CanvasHostState;
+    __canvasRenders: CanvasRenderProbe;
   }
 }
 
@@ -54,7 +64,11 @@ window.__canvas = {
   edgeCount: 0,
   collapsedCount: 0,
   ringGuides: 0,
+  selectedKey: null,
+  moved: [],
 };
+
+window.__canvasRenders = { counts: renderCounts, reset: resetRenderCounts };
 
 interface RingGuide {
   readonly radius: number;
@@ -94,7 +108,7 @@ function collectEdges(root: ChainNode): CanvasEdge[] {
   const visit = (node: ChainNode): void => {
     for (const child of node.children) {
       edges.push({
-        connectionId: child.parentEdge === null ? child.keyString : String(child.parentEdge.connectionId),
+        connectionId: child.parentEdge?.connectionId ?? -edges.length - 1,
         sourceKey: node.keyString,
         targetKey: child.keyString,
       });
@@ -199,8 +213,12 @@ function Host() {
             nodes={scene?.nodes ?? []}
             edges={scene?.edges ?? []}
             mode={mode}
-            onNodeSelect={() => undefined}
-            onNodesMoved={() => undefined}
+            onNodeSelect={(key) => {
+              window.__canvas.selectedKey = key;
+            }}
+            onNodesMoved={(moved) => {
+              window.__canvas.moved = [...moved];
+            }}
           >
             <ViewportPortal>
               {scene?.guides.map((guide, index) => (

@@ -368,13 +368,13 @@ describe('layout with collapse renders on the canvas in every mode', () => {
   });
 
   const edgesOf = (tree: ChainTree): CanvasEdge[] =>
-    tree.nodes.flatMap((node) =>
-      node.children.map((child) => ({
-        connectionId: child.parentEdge === null ? child.keyString : String(child.parentEdge.connectionId),
+    tree.nodes
+      .flatMap((node) => node.children.map((child) => ({ node, child })))
+      .map(({ node, child }, index) => ({
+        connectionId: child.parentEdge?.connectionId ?? -index - 1,
         sourceKey: node.keyString,
         targetKey: child.keyString,
-      })),
-    );
+      }));
 
   it.each(LAYOUT_MODES)(
     '%s: every node, +N leaf and edge draws; the root is flagged',

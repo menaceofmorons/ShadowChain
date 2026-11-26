@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { LayoutMode } from '../layout/types';
+import type { ConnectionId } from '../model/nodeKey';
 
 export interface CanvasNode {
   key: string;
@@ -11,7 +12,7 @@ export interface CanvasNode {
 }
 
 export interface CanvasEdge {
-  connectionId: string;
+  connectionId: ConnectionId;
   sourceKey: string;
   targetKey: string;
 }

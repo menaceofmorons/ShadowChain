@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import type { CanvasHostState } from './host/canvas';
 import { DEFAULT_ENGINE_OPTIONS } from '../src/map/layout/engineOptions';
 import { RADIAL_MAX_EXTENT_AT_150, RADIAL_MAX_GAP_RATIO } from '../src/map/layout/engines/elk/radialLegibility';
@@ -19,6 +19,7 @@ const EXPECTED_HANDLES = {
 
 interface DrawnBox {
   id: string;
+  kind: string;
   x: number;
   y: number;
   width: number;
@@ -30,6 +31,7 @@ const readDrawnBoxes = (): DrawnBox[] =>
     const origin = /translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)/.exec(element.style.transform);
     return {
       id: element.dataset.id ?? '',
+      kind: element.querySelector<HTMLElement>(':scope > div')?.dataset.kind ?? '',
       x: Number(origin?.[1]),
       y: Number(origin?.[2]),
       width: element.offsetWidth,
@@ -151,7 +153,9 @@ for (const { nodes, seed } of RADIAL_CASES) {
       visit(rootNode, 0);
     });
 
-    test('rule 5: the root is drawn differently from depth-1 nodes and ring guides are on the page', async ({ page }) => {
+    test('rule 5: the root is drawn differently from depth-1 nodes and ring guides are on the page', async ({
+      page,
+    }) => {
       await page.goto(url);
       await page.waitForFunction(() => (window as unknown as { __canvas: CanvasHostState }).__canvas.done);
       const rootNode = treeFor(nodes, seed);
@@ -267,6 +271,99 @@ test.describe('150-node chain on the canvas through the map entry point', () => 
         ),
       );
       expect(edgeKinds.every((straight) => straight === (mode === 'radial'))).toBe(true);
+    });
+  }
+});
+
+const ENGINE_SIZE_BY_KIND: Record<string, { width: number; height: number }> = {
+  system: { width: DEFAULT_ENGINE_OPTIONS.nodeWidth, height: DEFAULT_ENGINE_OPTIONS.nodeHeight },
+  unknown: { width: DEFAULT_ENGINE_OPTIONS.nodeWidth, height: DEFAULT_ENGINE_OPTIONS.nodeHeight },
+  alias: { width: DEFAULT_ENGINE_OPTIONS.aliasWidth, height: DEFAULT_ENGINE_OPTIONS.aliasHeight },
+  collapsed: { width: DEFAULT_ENGINE_OPTIONS.collapsedWidth, height: DEFAULT_ENGINE_OPTIONS.collapsedHeight },
+};
+
+const waitForHost = async (page: Page, query: string): Promise<void> => {
+  await page.goto(`/e2e/host/canvas.html?${query}`);
+  await page.waitForFunction(() => (window as unknown as { __canvas: CanvasHostState }).__canvas.done);
+};
+
+test.describe('node components at the engine size', () => {
+  for (const mode of LAYOUT_MODES) {
+    test(`${mode}: every drawn box equals the engine size for its kind`, async ({ page }) => {
+      await waitForHost(page, `mode=${mode}&size=${String(NODE_COUNT)}&seed=7&collapse=3`);
+      const boxes = await page.evaluate(readDrawnBoxes);
+      const kinds = new Set(boxes.map((box) => box.kind));
+      expect(kinds.has('system')).toBe(true);
+      expect(kinds.has('alias')).toBe(true);
+      expect(kinds.has('collapsed')).toBe(true);
+      for (const box of boxes) {
+        const expected = ENGINE_SIZE_BY_KIND[box.kind];
+        expect(expected, `${box.id} kind ${box.kind}`).toBeDefined();
+        expect({ width: box.width, height: box.height }, box.id).toEqual(expected);
+      }
+      expect(overlappingPairs(boxes)).toEqual([]);
+    });
+  }
+});
+
+test.describe('selecting an alias highlights every occurrence of its system', () => {
+  for (const mode of LAYOUT_MODES) {
+    test(`${mode}: the primary node and all aliases are highlighted, nothing else`, async ({ page }) => {
+      await waitForHost(page, `mode=${mode}&size=${String(NODE_COUNT)}&seed=7`);
+      const target = await page.evaluate(() => {
+        const systemOf = (id: string): string | null => /^[sa]:(\d+)/.exec(id)?.[1] ?? null;
+        const ids = [...document.querySelectorAll<HTMLElement>('.react-flow__node')].map((el) => el.dataset.id ?? '');
+        const alias = ids.find((id) => id.startsWith('a:'));
+        const systemId = alias === undefined ? null : systemOf(alias);
+        return { alias, group: ids.filter((id) => systemId !== null && systemOf(id) === systemId).sort() };
+      });
+      expect(target.alias).toBeDefined();
+      expect(target.group.length).toBeGreaterThanOrEqual(2);
+      await page.locator(`.react-flow__node[data-id="${target.alias as string}"]`).click();
+      const marked = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>('.react-flow__node')]
+          .filter((el) => el.querySelector('[data-highlighted="true"]') !== null)
+          .map((el) => el.dataset.id ?? '')
+          .sort(),
+      );
+      expect(marked).toEqual(target.group);
+    });
+  }
+});
+
+test.describe('applied drags', () => {
+  for (const mode of LAYOUT_MODES) {
+    test(`${mode}: a dragged node moves on screen, is reported once and nothing overlaps`, async ({ page }) => {
+      await waitForHost(page, `mode=${mode}&size=${String(NODE_COUNT)}&seed=7`);
+      const picked = await page.evaluate(() => {
+        const rects = [...document.querySelectorAll<HTMLElement>('.react-flow__node')].map((el) => {
+          const { x, y, width, height, bottom } = el.getBoundingClientRect();
+          return { id: el.dataset.id ?? '', x, y, width, height, bottom };
+        });
+        return {
+          lowest: rects.reduce((a, b) => (b.bottom > a.bottom ? b : a)),
+          anchor: rects.reduce((a, b) => (b.y < a.y ? b : a)),
+        };
+      });
+      const { lowest, anchor } = picked;
+      const startX = lowest.x + lowest.width / 2;
+      const startY = lowest.y + lowest.height / 2;
+      await page.mouse.move(startX, startY);
+      await page.mouse.down();
+      await page.mouse.move(startX, startY + 10, { steps: 4 });
+      await page.mouse.move(startX, startY + 20, { steps: 4 });
+      await page.mouse.up();
+      const gapBelowAnchor = (ids: { lowest: string; anchor: string }) =>
+        page.evaluate(({ lowest: low, anchor: top }) => {
+          const y = (id: string) =>
+            document.querySelector(`.react-flow__node[data-id="${id}"]`)?.getBoundingClientRect().y;
+          return (y(low) as number) - (y(top) as number);
+        }, ids);
+      const gapAfter = await gapBelowAnchor({ lowest: lowest.id, anchor: anchor.id });
+      expect(gapAfter - (lowest.y - anchor.y)).toBeGreaterThan(15);
+      const state = await page.evaluate(() => (window as unknown as { __canvas: CanvasHostState }).__canvas);
+      expect(state.moved.map((moved) => moved.key)).toEqual([lowest.id]);
+      expect(overlappingPairs(await page.evaluate(readDrawnBoxes))).toEqual([]);
     });
   }
 });

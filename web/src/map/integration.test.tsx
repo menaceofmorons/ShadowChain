@@ -233,7 +233,7 @@ describe('layout output renders on the canvas', () => {
       for (const child of node.children) {
         if (child.parentEdge !== null) {
           edges.push({
-            connectionId: String(child.parentEdge.connectionId),
+            connectionId: child.parentEdge.connectionId,
             sourceKey: node.keyString,
             targetKey: child.keyString,
           });
