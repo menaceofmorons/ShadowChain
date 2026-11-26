@@ -15,10 +15,15 @@ export type {
   ChainNodeKind,
   ChainSystem,
   ChainTree,
+  ConnectionAttributes,
+  ConnectionSize,
+  LifeStage,
+  MassStatus,
 } from './model/types';
 
 export * from './synthetic';
 export * from './layout';
+export * from './encoding';
 export * from './canvas';
 export * from './harness';
 export * from './fixtures/wanderer';

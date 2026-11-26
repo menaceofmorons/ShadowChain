@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { ConnectionEncoding } from '../encoding';
 import type { LayoutMode } from '../layout/types';
 import type { ConnectionId } from '../model/nodeKey';
 import type { CanvasGesture } from './interaction/gestures';
@@ -17,6 +18,7 @@ export interface CanvasEdge {
   connectionId: ConnectionId;
   sourceKey: string;
   targetKey: string;
+  encodings?: readonly ConnectionEncoding[];
 }
 
 export interface MovedNode {
