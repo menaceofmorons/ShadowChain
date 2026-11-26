@@ -100,9 +100,9 @@ describe('public entry point', () => {
 });
 
 describe('toolchain pin', () => {
-  it('pins Node to 24 in package engines', () => {
+  it('pins Node to 26 in package engines', () => {
     const pkg = JSON.parse(packageJsonText) as { engines?: { node?: string } };
-    expect(pkg.engines?.node).toBe('>=24 <25');
+    expect(pkg.engines?.node).toBe('>=26 <27');
   });
 });
 
