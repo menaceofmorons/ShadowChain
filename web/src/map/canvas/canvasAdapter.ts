@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { LayoutMode } from '../layout/types';
 import type { ConnectionId } from '../model/nodeKey';
+import type { CanvasGesture } from './interaction/gestures';
 
 export interface CanvasNode {
   key: string;
@@ -9,6 +10,7 @@ export interface CanvasNode {
   isAlias: boolean;
   hiddenCount?: number | null;
   isRoot?: boolean;
+  canCollapse?: boolean;
 }
 
 export interface CanvasEdge {
@@ -30,4 +32,5 @@ export interface CanvasAdapterProps {
   children?: ReactNode;
   onNodeSelect: (key: string) => void;
   onNodesMoved: (moved: readonly MovedNode[]) => void;
+  onGesture?: (gesture: CanvasGesture) => void;
 }

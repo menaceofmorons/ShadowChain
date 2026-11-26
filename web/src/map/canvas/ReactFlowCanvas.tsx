@@ -1,11 +1,29 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { applyNodeChanges, Position, ReactFlow, type Edge, type Node, type NodeChange } from '@xyflow/react';
+import {
+  applyNodeChanges,
+  Position,
+  ReactFlow,
+  SelectionMode,
+  type Edge,
+  type Node,
+  type NodeChange,
+} from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { DEFAULT_ENGINE_OPTIONS, nodeSizeForKind } from '../layout/engineOptions';
 import type { LayoutMode } from '../layout/types';
 import type { CanvasAdapterProps, CanvasNode, MovedNode } from './canvasAdapter';
 import { NODE_TYPES, SIDES, type BoxData, type BoxNode } from './canvasNodes';
 import { createHighlightStore, HighlightContext } from './highlightStore';
+import {
+  ContextMenu,
+  constrainToRootAxis,
+  decodeModifiers,
+  menuItemsFor,
+  MULTI_SELECTION_KEY_CODES,
+  planDrag,
+  SELECTION_KEY_CODE,
+} from './interaction';
+import type { Point } from './interaction/rootAxis';
 import { canvasNodeKind, highlightGroups, type CanvasNodeKind } from './nodeKinds';
 
 const handlePoint = (position: Position, width: number, height: number): { x: number; y: number } => {
@@ -55,6 +73,7 @@ function toBoxNode(node: CanvasNode, mode: LayoutMode): BoxNode {
     data: { label: labelFor(kind, node), width, height, mode, isRoot: node.isRoot === true, kind },
     initialWidth: width,
     initialHeight: height,
+    draggable: !(kind === 'collapsed' || (mode === 'radial' && node.isRoot === true)),
     handles: [
       { type: 'target', position: sides.target, ...point(sides.target), width: 1, height: 1 },
       { type: 'source', position: sides.source, ...point(sides.source), width: 1, height: 1 },
@@ -66,7 +85,41 @@ export function movedNodes(dragged: readonly Pick<Node, 'id' | 'position'>[]): M
   return dragged.map((n) => ({ key: n.id, x: n.position.x, y: n.position.y }));
 }
 
-const APPLIED_CHANGES = new Set<NodeChange['type']>(['position', 'dimensions']);
+const APPLIED_CHANGES = new Set<NodeChange['type']>(['position', 'dimensions', 'select']);
+
+const withSelection = (base: readonly BoxNode[], current: readonly BoxNode[]): BoxNode[] => {
+  const selected = new Set(current.filter((node) => node.selected === true).map((node) => node.id));
+  return base.map((node) => (selected.has(node.id) ? { ...node, selected: true } : node));
+};
+
+function constrainRootChanges(
+  changes: NodeChange<BoxNode>[],
+  mode: LayoutMode,
+  rootKey: string | null,
+  current: readonly BoxNode[],
+): NodeChange<BoxNode>[] {
+  if (rootKey === null) {
+    return changes;
+  }
+  return changes.map((change) => {
+    if (change.type !== 'position' || change.id !== rootKey || change.position === undefined) {
+      return change;
+    }
+    const start = current.find((node) => node.id === rootKey)?.position;
+    return start === undefined ? change : { ...change, position: constrainToRootAxis(mode, start, change.position) };
+  });
+}
+
+interface DragStart {
+  readonly alone: boolean;
+  readonly starts: ReadonlyMap<string, Point>;
+}
+
+interface MenuState {
+  readonly key: string;
+  readonly x: number;
+  readonly y: number;
+}
 
 export function ReactFlowCanvas({
   nodes,
@@ -75,6 +128,7 @@ export function ReactFlowCanvas({
   children,
   onNodeSelect,
   onNodesMoved,
+  onGesture,
 }: CanvasAdapterProps) {
   const cache = useRef(new Map<string, BoxNode>());
   const baseNodes = useMemo<BoxNode[]>(() => {
@@ -100,15 +154,60 @@ export function ReactFlowCanvas({
   const [flowNodes, setFlowNodes] = useState(baseNodes);
   if (shownBase !== baseNodes) {
     setShownBase(baseNodes);
-    setFlowNodes(baseNodes);
+    setFlowNodes((current) => withSelection(baseNodes, current));
   }
 
-  const onNodesChange = useCallback((changes: NodeChange<BoxNode>[]) => {
-    const applicable = changes.filter((change) => APPLIED_CHANGES.has(change.type));
-    if (applicable.length > 0) {
-      setFlowNodes((current) => applyNodeChanges(applicable, current));
+  const rootKey = useMemo(() => nodes.find((node) => node.isRoot === true)?.key ?? null, [nodes]);
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange<BoxNode>[]) => {
+      const applicable = changes.filter((change) => APPLIED_CHANGES.has(change.type));
+      if (applicable.length > 0) {
+        setFlowNodes((current) => applyNodeChanges(constrainRootChanges(applicable, mode, rootKey, current), current));
+      }
+    },
+    [mode, rootKey],
+  );
+
+  const dragStart = useRef<DragStart | null>(null);
+  const [menu, setMenu] = useState<MenuState | null>(null);
+  const byKey = useMemo(() => new Map(nodes.map((node) => [node.key, node])), [nodes]);
+
+  const menuItems = useMemo(() => {
+    const target = menu === null ? undefined : byKey.get(menu.key);
+    if (target === undefined) {
+      return [];
     }
-  }, []);
+    return menuItemsFor({
+      key: target.key,
+      kind: canvasNodeKind(target),
+      isRoot: target.isRoot === true,
+      canCollapse: target.canCollapse === true,
+    });
+  }, [menu, byKey]);
+
+  const finishDrag = (dragged: readonly BoxNode[]): void => {
+    const begun = dragStart.current;
+    dragStart.current = null;
+    if (begun === null) {
+      return;
+    }
+    const plan = planDrag({
+      mode,
+      alone: begun.alone,
+      nodes: dragged.flatMap((node) => {
+        const start = begun.starts.get(node.id);
+        return start === undefined
+          ? []
+          : [{ key: node.id, kind: node.data.kind, isRoot: node.data.isRoot, start, end: node.position }];
+      }),
+    });
+    if (plan === null) {
+      setFlowNodes((current) => withSelection(baseNodes, current));
+    } else {
+      onGesture?.(plan);
+    }
+  };
 
   const flowEdges = useMemo<Edge[]>(
     () =>
@@ -138,18 +237,49 @@ export function ReactFlowCanvas({
         nodeTypes={NODE_TYPES}
         onlyRenderVisibleElements={false}
         onNodesChange={onNodesChange}
+        selectionKeyCode={SELECTION_KEY_CODE}
+        multiSelectionKeyCode={[...MULTI_SELECTION_KEY_CODES]}
+        selectionMode={SelectionMode.Partial}
         onNodeClick={(_, node) => {
+          setMenu(null);
           select(node.id);
           onNodeSelect(node.id);
+          if (node.data.kind === 'collapsed') {
+            onGesture?.({ type: 'set-collapsed', key: node.id, collapsed: false });
+          }
         }}
         onPaneClick={() => {
+          setMenu(null);
           select(null);
+        }}
+        onNodeContextMenu={(event, node) => {
+          event.preventDefault();
+          setMenu({ key: node.id, x: event.clientX, y: event.clientY });
+        }}
+        onNodeDragStart={(event, _node, dragged) => {
+          setMenu(null);
+          dragStart.current = {
+            alone: decodeModifiers(event).aloneDrag,
+            starts: new Map(dragged.map((node) => [node.id, { x: node.position.x, y: node.position.y }])),
+          };
         }}
         onNodeDragStop={(_, _node, dragged) => {
           onNodesMoved(movedNodes(dragged));
+          finishDrag(dragged as BoxNode[]);
         }}
       >
         {children}
+        {menu !== null && menuItems.length > 0 && (
+          <ContextMenu
+            x={menu.x}
+            y={menu.y}
+            items={menuItems}
+            onChoose={(gesture) => onGesture?.(gesture)}
+            onClose={() => {
+              setMenu(null);
+            }}
+          />
+        )}
       </ReactFlow>
     </HighlightContext.Provider>
   );

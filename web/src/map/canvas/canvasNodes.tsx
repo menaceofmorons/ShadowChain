@@ -44,16 +44,17 @@ const MARK_STYLE: Record<NodeMark, CSSProperties> = {
   selected: { boxShadow: '0 0 0 3px #2980b9' },
 };
 
-function NodeShell({ id, data }: NodeProps<BoxNode>) {
+function NodeShell({ id, data, selected }: NodeProps<BoxNode>) {
   recordRender(id);
-  const mark = useNodeMark(id);
+  const highlightMark = useNodeMark(id);
+  const mark: NodeMark = selected ? 'selected' : highlightMark === 'selected' ? 'none' : highlightMark;
   const sides = SIDES[data.mode];
   const handleStyle = data.mode === 'radial' ? CENTRED : undefined;
   return (
     <div
       data-kind={data.kind}
-      data-highlighted={mark === 'none' ? undefined : 'true'}
-      data-selected={mark === 'selected' ? 'true' : undefined}
+      data-highlighted={highlightMark === 'none' ? undefined : 'true'}
+      data-selected={selected ? 'true' : undefined}
       style={{
         ...KIND_STYLE[data.kind],
         ...(data.isRoot ? ROOT_STYLE : {}),
