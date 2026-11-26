@@ -23,3 +23,5 @@ export * from './canvas';
 export * from './harness';
 export * from './fixtures/wanderer';
 export * from './bakeoff';
+export * from './store';
+export * from './session';
