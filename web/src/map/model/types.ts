@@ -4,7 +4,19 @@ export interface ChainSystem {
   readonly id: SystemId;
 }
 
-export interface ChainConnection {
+export type MassStatus = 'fresh' | 'reduced' | 'critical';
+
+export type LifeStage = 1 | 2 | 3 | 4;
+
+export type ConnectionSize = 'small' | 'medium' | 'large' | 'freighter' | 'capital' | 'unknown';
+
+export interface ConnectionAttributes {
+  readonly massStatus?: MassStatus;
+  readonly lifeStage?: LifeStage;
+  readonly size?: ConnectionSize;
+}
+
+export interface ChainConnection extends ConnectionAttributes {
   readonly id: ConnectionId;
   readonly createdAt: number;
   readonly endA: SystemId;
