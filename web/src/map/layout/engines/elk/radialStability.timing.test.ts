@@ -3,15 +3,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildChainTree } from '../../../model/chainTree';
 import { applyChurn, generateChain, generateChurnScript, SYNTHETIC_ROOT_SYSTEM_ID } from '../../../synthetic';
 import { createElkEngine } from './elkEngine';
+import { scaledLimit } from '../../testing/loadMultiplier';
 
 const LOAD_FACTOR = Math.max(1, Number(process.env.LAYOUT_TEST_LOAD_FACTOR ?? 1) || 1);
-const scaledLimit = (limitMs: number): number => limitMs * LOAD_FACTOR;
+const limit = (limitMs: number): number => scaledLimit(limitMs, LOAD_FACTOR);
 
-const INCREMENTAL_P95_LIMIT_MS = scaledLimit(10);
-const FULL_P95_LIMIT_MS_AT_500 = scaledLimit(500);
-const FULL_P95_LIMIT_MS_AT_150 = scaledLimit(100);
-const SINGLE_REQUEST_LIMIT_MS_AT_500 = scaledLimit(2000);
-const TIMING_TEST_TIMEOUT_MS = scaledLimit(30_000);
+const INCREMENTAL_P95_LIMIT_MS = limit(10);
+const FULL_P95_LIMIT_MS_AT_500 = limit(500);
+const FULL_P95_LIMIT_MS_AT_150 = limit(100);
+const SINGLE_REQUEST_LIMIT_MS_AT_500 = limit(2000);
+const TIMING_TEST_TIMEOUT_MS = limit(30_000);
 
 const percentile95 = (values: readonly number[]): number =>
   [...values].sort((a, b) => a - b)[Math.min(values.length - 1, Math.ceil(values.length * 0.95) - 1)] as number;
