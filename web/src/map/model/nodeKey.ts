@@ -8,6 +8,8 @@ export type PersistedNodeKey =
 
 export type NodeKey = PersistedNodeKey | { readonly kind: 'collapsed'; readonly target: PersistedNodeKey };
 
+export const COLLAPSED_MARKER_PREFIX = '+:';
+
 export const collapsedKey = (target: PersistedNodeKey): NodeKey => ({ kind: 'collapsed', target });
 
 export const systemKey = (systemId: SystemId): PersistedNodeKey => ({ kind: 'system', systemId });
@@ -32,15 +34,18 @@ export function serialiseNodeKey(key: NodeKey): string {
     case 'unknownEnd':
       return `u:${key.connectionId}`;
     case 'collapsed':
-      return `+:${serialiseNodeKey(key.target)}`;
+      return `${COLLAPSED_MARKER_PREFIX}${serialiseNodeKey(key.target)}`;
   }
 }
+
+export const collapsedTargetText = (text: string): string =>
+  text.startsWith(COLLAPSED_MARKER_PREFIX) ? text.slice(COLLAPSED_MARKER_PREFIX.length) : text;
 
 const KEY_PATTERN = /^(?:s:(\d+)|a:(\d+):(\d+)|u:(\d+))$/;
 
 export function parseNodeKey(text: string): NodeKey {
-  if (text.startsWith('+:')) {
-    const target = parseNodeKey(text.slice(2));
+  if (text.startsWith(COLLAPSED_MARKER_PREFIX)) {
+    const target = parseNodeKey(text.slice(COLLAPSED_MARKER_PREFIX.length));
     if (target.kind === 'collapsed') {
       throw new Error(`Invalid node key: ${text}`);
     }

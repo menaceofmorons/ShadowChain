@@ -1,14 +1,12 @@
 import { removeConnections as removeGraphConnections } from '../model/chainOps';
 import { buildChainTree } from '../model/chainTree';
 import type { ChainConnection, ChainGraph, ChainSystem, ChainTree } from '../model/types';
-import type { ConnectionId, SystemId } from '../model/nodeKey';
+import { collapsedTargetText, type ConnectionId, type SystemId } from '../model/nodeKey';
 import { createRegistryAdapter } from '../layout/engines/registryAdapter';
 import type { LayoutEngine, LayoutMode, LayoutRequest, ManualPosition, PlacedNode } from '../layout/types';
 import type { PositionStore } from '../store';
 import { buildFullRequest, buildIncrementalRequest, reduceTree, withFlags } from './requestBuilder';
 import type { RequestContext } from './requestBuilder';
-
-export const COLLAPSED_MARKER_PREFIX = '+:';
 
 export interface MapSessionOptions {
   readonly graph: ChainGraph;
@@ -219,9 +217,7 @@ export function createMapSession(options: MapSessionOptions): MapSession {
       }),
     setCollapsed: (nodeKey, collapsed) =>
       exclusive(async () => {
-        const target = nodeKey.startsWith(COLLAPSED_MARKER_PREFIX)
-          ? nodeKey.slice(COLLAPSED_MARKER_PREFIX.length)
-          : nodeKey;
+        const target = collapsedTargetText(nodeKey);
         store.setCollapsed(target, collapsed);
         await layoutFull();
       }),
