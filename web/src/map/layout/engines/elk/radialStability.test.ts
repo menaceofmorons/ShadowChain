@@ -7,8 +7,11 @@ import { applyChurn, generateChain, generateChurnScript, SYNTHETIC_ROOT_SYSTEM_I
 import type { ChurnOperation } from '../../../synthetic';
 import { DEFAULT_ENGINE_OPTIONS } from '../../engineOptions';
 import type { LayoutEngine, PlacedNode } from '../../types';
-import { scaledLimit, scaledTimeout } from '../../testing/loadMultiplier';
+import { scaledTimeout } from '../../testing/loadMultiplier';
 import { createElkEngine } from './elkEngine';
+
+const LOAD_FACTOR = Math.max(1, Number(process.env.LAYOUT_TEST_LOAD_FACTOR ?? 1) || 1);
+const scaledLimit = (limitMs: number): number => limitMs * LOAD_FACTOR;
 
 // TUNE: displacement and time bounds for a non-saturating radial incremental step (A2).
 const MAX_MOVED_FRACTION_ADDITION = 0.65;
@@ -286,27 +289,6 @@ describe.each([50, 150, 250, 500])('radial incremental churn at %i nodes', (coun
           expect(parentTurns, `ring ${String(depth)} parent order`).toEqual([...parentTurns].sort((a, b) => a - b));
         }
         repacked += unchanged.size > 0 ? 1 : 0;
-        const dbg = overlappingPairs(after);
-        if (dbg.length > 0) {
-          const d = depthsOf(tree);
-          console.info(
-            'DBG',
-            JSON.stringify(dbg),
-            dbg
-              .map((p) =>
-                p
-                  .split('/')
-                  .map(
-                    (k) =>
-                      `${k}:${String(d.get(k))}:${JSON.stringify(step.before.find((n) => n.nodeKey === k)?.x)}:${JSON.stringify(after.find((n) => n.nodeKey === k)?.x)}`,
-                  )
-                  .join(' '),
-              )
-              .join(' | '),
-            'added',
-            step.added.join(','),
-          );
-        }
         expect(overlappingPairs(after)).toEqual([]);
         expect(crossings(tree, after)).toEqual([]);
       }
