@@ -61,7 +61,7 @@ metadata:
 - `elk.bundled.js` fails inside a real Web Worker without a `document` global (`_Worker is not a constructor`); `engines/elk/documentShim.ts` is imported first in `elkWorker.ts`; Vitest jsdom hides this (WS-1.2)
 - Vite worker URLs must be static `new URL('./x.ts', import.meta.url)` literals; keep them in lazy factories so Vitest never evaluates them (WS-1.2)
 - Run Playwright via `npm run e2e --prefix web -- …`; `npx --prefix web playwright` misses the config (WS-1.2)
-- Playwright specs can import `src/` TypeScript and call Vite `build` (`write: false`), but not `?raw` imports; the `bakeoff` project runs after the others (WS-1.2)
+- Playwright specs can import `src/` TypeScript and call Vite `build` (`write: false`), but not `?raw` imports; the `bakeoff` project runs after the others; `page.evaluate` cannot return a `Map`, so return entries and rebuild (WS-1.2, WS-1.4)
 - Layout `x`,`y` are node top-left in both engines (WS-1.2)
 - e2e host selects an engine via the Worker `name` option (`self.name`); register new engines in `web/e2e/host/engines.ts` (WS-1.2)
 - Go files are forced to LF by `.gitattributes` (`*.go text eol=lf`); gofmt flags CRLF working copies from `core.autocrlf=true` (WS-1.3)
@@ -76,3 +76,4 @@ metadata:
 - Controlled React Flow: rubber band and Ctrl toggle work only if `select` changes are applied in `onNodesChange`; Playwright Ctrl/Meta clicks need a short wait after `keyboard.down` (WS-1.4)
 - React Flow edge props (`sourceX` etc.) are handle points; custom edges needing node boxes carry node size in edge `data`. Overriding `edgeTypes` keys `default` and `straight` keeps the `react-flow__edge-straight` class tests rely on (WS-1.4)
 - Synthetic chains have parallel connections and aliases: routing treats each path, not each edge, as a branch; removing a connection can leave its node in the tree, so derive `removedNodeKeys` from the tree key difference (WS-1.4)
+- Render-churn e2e: `window.__canvas.placed` plus drawn path attributes, compared before and after an event, shows which elements re-rendered without instrumenting React (WS-1.4)
