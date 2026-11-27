@@ -35,5 +35,5 @@ export interface CanvasAdapterProps {
   children?: ReactNode;
   onNodeSelect: (key: string) => void;
   onNodesMoved: (moved: readonly MovedNode[]) => void;
-  onGesture?: (gesture: CanvasGesture) => void;
+  onGesture?: (gesture: CanvasGesture) => void | Promise<void>;
 }
