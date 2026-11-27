@@ -7,6 +7,7 @@ let root: Root | null = null;
 let container: HTMLDivElement | null = null;
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   act(() => root?.unmount());
   container?.remove();
   root = null;
@@ -19,6 +20,54 @@ const NODES: CanvasNode[] = [
 ];
 
 const EDGES: CanvasEdge[] = [{ connectionId: 1, sourceKey: 's:1', targetKey: 'c:2' }];
+
+function stopAutoPan(): void {
+  vi.stubGlobal('requestAnimationFrame', () => 0);
+  vi.stubGlobal('cancelAnimationFrame', () => undefined);
+}
+
+function mount(nodes: CanvasNode[], onGesture: () => Promise<void>) {
+  if (root === null) {
+    container = document.createElement('div');
+    container.style.width = '800px';
+    container.style.height = '600px';
+    document.body.appendChild(container);
+    root = createRoot(container);
+  }
+  act(() => {
+    root?.render(
+      <ReactFlowCanvas
+        nodes={nodes}
+        edges={EDGES}
+        onNodeSelect={vi.fn()}
+        onNodesMoved={vi.fn()}
+        onGesture={onGesture}
+      />,
+    );
+  });
+}
+
+function nodeTransform(key: string): string {
+  return (container?.querySelector(`.react-flow__node[data-id="${key}"]`) as HTMLElement).style.transform;
+}
+
+function dragNode(key: string, dx: number, dy: number): void {
+  const node = container?.querySelector(`.react-flow__node[data-id="${key}"]`) as HTMLElement;
+  const view = node.ownerDocument.defaultView;
+  const fire = (target: EventTarget, type: string, x: number, y: number): void => {
+    const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y });
+    Object.defineProperty(event, 'view', { value: view });
+    target.dispatchEvent(event);
+  };
+  fire(node, 'mousedown', 100, 100);
+  fire(window, 'mousemove', 100 + dx / 2, 100 + dy / 2);
+  fire(window, 'mousemove', 100 + dx, 100 + dy);
+  fire(window, 'mouseup', 100 + dx, 100 + dy);
+}
+
+const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 50));
+
+const BASE_TRANSFORM = 'translate(0px,0px)';
 
 describe('gesture dispatch failure', () => {
   it('swallows a rejected gesture and keeps the canvas mounted', async () => {
@@ -51,5 +100,50 @@ describe('gesture dispatch failure', () => {
     expect(onGesture).toHaveBeenCalledWith({ type: 'set-collapsed', key: 'c:2', collapsed: false });
     expect(unhandled).not.toHaveBeenCalled();
     expect(container.querySelector('.react-flow__node[data-id="s:1"]')).not.toBeNull();
+  });
+
+  it('returns a dragged node to its base position when the gesture is rejected', async () => {
+    let reject: (reason: Error) => void = () => undefined;
+    const onGesture = vi.fn(
+      () =>
+        new Promise<void>((_, rej) => {
+          reject = rej;
+        }),
+    );
+    stopAutoPan();
+    mount(NODES, onGesture);
+    await act(async () => {
+      dragNode('s:1', 40, 0);
+      await settle();
+    });
+    await act(async () => {
+      reject(new Error('layout failed'));
+      await settle();
+    });
+    expect(onGesture).toHaveBeenCalled();
+    expect(nodeTransform('s:1')).toBe(BASE_TRANSFORM);
+  });
+
+  it('resyncs to the latest plan when an earlier gesture rejects after a newer plan published', async () => {
+    let reject: (reason: Error) => void = () => undefined;
+    const onGesture = vi.fn(
+      () =>
+        new Promise<void>((_, rej) => {
+          reject = rej;
+        }),
+    );
+    stopAutoPan();
+    mount(NODES, onGesture);
+    await act(async () => {
+      dragNode('s:1', 40, 0);
+      await settle();
+    });
+    const moved = NODES.map((node) => (node.key === 's:1' ? { ...node, x: 200 } : node));
+    mount(moved, onGesture);
+    await act(async () => {
+      reject(new Error('layout failed'));
+      await settle();
+    });
+    expect(nodeTransform('s:1')).toContain('translate(200px');
   });
 });
