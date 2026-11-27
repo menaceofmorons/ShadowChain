@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:timing": "vitest run --config vitest.timing.config.ts",
     "e2e": "playwright test",
     "format": "prettier --write src",
     "format:check": "prettier --check src"

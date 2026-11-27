@@ -16,7 +16,6 @@ import type { LayoutMode, ManualPosition, PlacedNode } from '../../types';
 import { createTidyTreeEngine } from './tidyTreeEngine';
 
 const A2_MAX_NODES_MOVED_PER_ADDITION = 40;
-const INCREMENTAL_P95_BUDGET_MS = 10;
 const OPTIONS = DEFAULT_ENGINE_OPTIONS;
 const TREE_MODES = ['top-down', 'left-to-right'] as const;
 
@@ -154,7 +153,6 @@ interface Step {
   added: string[];
   removed: string[];
   manualKeys: Set<string>;
-  elapsedMs: number;
 }
 
 const advance = async (world: World, operation: ChurnOperation, mode: LayoutMode): Promise<Step> => {
@@ -165,7 +163,6 @@ const advance = async (world: World, operation: ChurnOperation, mode: LayoutMode
   const added = [...present].filter((key) => !known.has(key));
   const removed = [...known].filter((key) => !present.has(key));
   const manual = filterManualPositions(tree, world.manual);
-  const start = performance.now();
   const placed = await engine.layout({
     type: 'incremental',
     tree,
@@ -175,7 +172,6 @@ const advance = async (world: World, operation: ChurnOperation, mode: LayoutMode
     addedNodeKeys: added,
     removedNodeKeys: removed,
   });
-  const elapsedMs = performance.now() - start;
   return {
     previousTree: world.tree,
     world: { graph, tree, placed, manual },
@@ -183,7 +179,6 @@ const advance = async (world: World, operation: ChurnOperation, mode: LayoutMode
     added,
     removed,
     manualKeys: new Set(manual.map((p) => p.nodeKey)),
-    elapsedMs,
   };
 };
 
@@ -225,23 +220,6 @@ describe('tidy-tree churn: stable placement with pinned nodes', () => {
         expect(pureAdditions).toBeGreaterThan(5);
       },
     );
-  });
-});
-
-describe('tidy-tree incremental placement time', () => {
-  it('places an addition or removal in under 10 ms at p95 at 150 nodes', async () => {
-    const mode = 'top-down';
-    let world = await startWorld(150, mode, 3);
-    const script = generateChurnScript(world.graph, { seed: 5, operationCount: 100 });
-    const durations: number[] = [];
-    for (const operation of script) {
-      const step = await advance(world, operation, mode);
-      durations.push(step.elapsedMs);
-      world = step.world;
-    }
-    const sorted = [...durations].sort((a, b) => a - b);
-    const p95 = sorted[Math.ceil(sorted.length * 0.95) - 1] as number;
-    expect(p95).toBeLessThan(INCREMENTAL_P95_BUDGET_MS);
   });
 });
 

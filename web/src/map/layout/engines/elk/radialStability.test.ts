@@ -10,17 +10,10 @@ import type { LayoutEngine, PlacedNode } from '../../types';
 import { scaledTimeout } from '../../testing/loadMultiplier';
 import { createElkEngine } from './elkEngine';
 
-const LOAD_FACTOR = Math.max(1, Number(process.env.LAYOUT_TEST_LOAD_FACTOR ?? 1) || 1);
-const scaledLimit = (limitMs: number): number => limitMs * LOAD_FACTOR;
-
 // TUNE: displacement and time bounds for a non-saturating radial incremental step (A2).
 const MAX_MOVED_FRACTION_ADDITION = 0.65;
 const MAX_MOVED_FRACTION_REMOVAL = 1;
 const MAX_SHIFT = 1600;
-const INCREMENTAL_P95_LIMIT_MS = scaledLimit(10);
-const FULL_P95_LIMIT_MS_AT_500 = scaledLimit(500);
-const FULL_P95_LIMIT_MS_AT_150 = scaledLimit(100);
-const SINGLE_REQUEST_LIMIT_MS_AT_500 = scaledLimit(2000);
 const CHURN_TEST_TIMEOUT_MS = scaledTimeout(5000);
 const RING_TOLERANCE = 1;
 
@@ -103,9 +96,6 @@ const turnAround = (origin: { x: number; y: number }, node: PlacedNode): number 
   return turn < 0 ? turn + 2 * Math.PI : turn;
 };
 
-const percentile95 = (values: readonly number[]): number =>
-  [...values].sort((a, b) => a - b)[Math.min(values.length - 1, Math.ceil(values.length * 0.95) - 1)] as number;
-
 interface ChurnStep {
   readonly tree: ChainTree;
   readonly beforeTree: ChainTree;
@@ -114,7 +104,6 @@ interface ChurnStep {
   readonly added: string[];
   readonly kind: ChurnOperation['kind'];
   readonly saturated: boolean;
-  readonly ms: number;
 }
 
 async function runChurn(
@@ -138,7 +127,6 @@ async function runChurn(
     const added = [...next].filter((key) => !known.has(key));
     const removed = [...known].filter((key) => !next.has(key));
     const calls = spy.mock.calls.length;
-    const start = performance.now();
     const after = await engine.layout({
       type: 'incremental',
       tree,
@@ -148,7 +136,6 @@ async function runChurn(
       addedNodeKeys: added,
       removedNodeKeys: removed,
     });
-    const ms = performance.now() - start;
     steps.push({
       tree,
       beforeTree,
@@ -157,7 +144,6 @@ async function runChurn(
       added,
       kind: operation.kind,
       saturated: spy.mock.calls.length > calls,
-      ms,
     });
     placed = after;
     known = next;
@@ -423,47 +409,4 @@ describe('radial incremental stability and time', () => {
     expect(graph.systems.length).toBe(150);
     expect(await run()).toEqual(await run());
   });
-
-  it('keeps incremental placement under the limit at 150 nodes', async () => {
-    const run = await runChurn(createElkEngine(), 150, 7, 30);
-    const plain = run.filter((s) => s.kind === 'add' && !s.saturated).map((s) => s.ms);
-    const saturated = run.filter((s) => s.kind === 'add' && s.saturated).map((s) => s.ms);
-    console.info(
-      `radial incremental 150 nodes: ${String(plain.length)} plain additions p95 ${percentile95(plain).toFixed(2)} ms, ${String(saturated.length)} saturation growth additions max ${String(Math.max(0, ...saturated).toFixed(0))} ms`,
-    );
-    expect(percentile95(plain)).toBeLessThan(INCREMENTAL_P95_LIMIT_MS);
-    expect(Math.max(0, ...saturated)).toBeLessThan(FULL_P95_LIMIT_MS_AT_150);
-  });
-
-  it.each([7, 8])(
-    'bounds layout time at 500 nodes on the seed %i churn shape',
-    async (seed) => {
-      const engine = createElkEngine();
-      let graph = generateChain({ nodeCount: 500, seed });
-      const churn = generateChurnScript(graph, { seed: seed + 1, operationCount: 30 });
-      const durations: number[] = [];
-      await engine.layout({
-        type: 'full',
-        tree: buildChainTree(graph, SYNTHETIC_ROOT_SYSTEM_ID),
-        mode: 'radial',
-        manualPositions: [],
-      });
-      for (const [index, operation] of churn.entries()) {
-        graph = applyChurn(graph, [operation]);
-        if (index < 14) {
-          continue;
-        }
-        const tree = buildChainTree(graph, SYNTHETIC_ROOT_SYSTEM_ID);
-        const start = performance.now();
-        await engine.layout({ type: 'full', tree, mode: 'radial', manualPositions: [] });
-        durations.push(performance.now() - start);
-      }
-      console.info(
-        `radial full 500 nodes seed ${String(seed)}: p95 ${percentile95(durations).toFixed(0)} ms, max ${Math.max(...durations).toFixed(0)} ms`,
-      );
-      expect(percentile95(durations)).toBeLessThan(FULL_P95_LIMIT_MS_AT_500);
-      expect(Math.max(...durations)).toBeLessThan(SINGLE_REQUEST_LIMIT_MS_AT_500);
-    },
-    scaledTimeout(30_000),
-  );
 });

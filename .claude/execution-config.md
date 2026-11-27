@@ -49,6 +49,7 @@ Every worktree builds in its own checkout, so a toolchain that keeps its build o
 | Unit tests (all) | `go test ./...` | `go.mod` |
 | Unit tests (filtered) | `go test ./internal/{package}/...` | `go.mod` |
 | Frontend tests | `npm run test --prefix web` | `web/package.json` |
+| Frontend timing tests | `npm run test:timing --prefix web` | `web/package.json` |
 
 ## Health Checks (health-check)
 Scopes: `wave` per T-TLO §2.6; `full` per §2.7 and §3.
@@ -66,6 +67,7 @@ Scopes: `wave` per T-TLO §2.6; `full` per §2.7 and §3.
 | type-drift | `tygo generate && git diff --exit-code -- web/src/api/types.gen.ts` | `tygo.yaml` | wave, full | `—` |
 | unit-go | `go test ./...` | `go.mod` | full | `cmd/, internal/, go.mod, go.sum` |
 | unit-web | `npm run test --prefix web` | `web/package.json` | full | `web/` |
+| unit-web-timing | `npm run test:timing --prefix web` | `web/package.json` | full | `web/` |
 | e2e | `npm run e2e --prefix web` | `web/playwright.config.ts` | full | `web/` |
 
 ## Release (`#T-REL`, `#T-RS`)
