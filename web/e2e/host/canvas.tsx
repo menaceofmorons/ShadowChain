@@ -35,6 +35,7 @@ import {
   type MapSession,
   type PositionsBatch,
   type PositionStore,
+  type PositionStoreSnapshot,
 } from '../../src/map';
 
 export interface HostPlacement {
@@ -77,6 +78,7 @@ export interface CanvasOps {
   addLeaf: () => Promise<void>;
   removeLast: () => Promise<void>;
   churnStep: () => Promise<boolean>;
+  storeSnapshot: () => PositionStoreSnapshot;
 }
 
 declare global {
@@ -412,6 +414,7 @@ function Host() {
         await need().session.removeConnections([state.lastAdded]);
         state.lastAdded = null;
       },
+      storeSnapshot: () => need().store.snapshot(),
       churnStep: async () => {
         const { session } = need();
         const state = (churn.current ??= {
@@ -469,6 +472,22 @@ function Host() {
         </button>
         <button data-testid="add-connection" onClick={addConnection}>
           Add connection
+        </button>
+        <button
+          data-testid="add-leaf"
+          onClick={() => {
+            run(window.__canvasOps.addLeaf());
+          }}
+        >
+          Add leaf
+        </button>
+        <button
+          data-testid="remove-last"
+          onClick={() => {
+            run(window.__canvasOps.removeLast());
+          }}
+        >
+          Remove last added
         </button>
         <button data-testid="stale-update" onClick={staleUpdate}>
           Stale update
