@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { applyNodeChanges, Position, ReactFlow, SelectionMode, type Node, type NodeChange } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { buildFlowEdges, EDGE_TYPES, type ConnectorEdgeType, type EdgeCache } from './edges';
@@ -183,9 +183,14 @@ export function ReactFlowCanvas({
     });
   }, [menu, byKey]);
 
+  const latestBase = useRef(baseNodes);
+  useEffect(() => {
+    latestBase.current = baseNodes;
+  }, [baseNodes]);
+
   const dispatchGesture = (gesture: CanvasGesture): void => {
     const resync = (): void => {
-      setFlowNodes((current) => withSelection(baseNodes, current));
+      setFlowNodes((current) => withSelection(latestBase.current, current));
     };
     void (async () => {
       try {
