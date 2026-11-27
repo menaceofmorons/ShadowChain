@@ -35,6 +35,9 @@ const handlePoint = (position: Position, width: number, height: number): { x: nu
 const ENGINE_KIND = { system: 'primary', alias: 'alias', unknown: 'unknownEnd', collapsed: 'collapsed' } as const;
 
 const labelFor = (kind: CanvasNodeKind, node: CanvasNode): string => {
+  if (node.label !== undefined && (kind === 'system' || kind === 'alias')) {
+    return node.label;
+  }
   switch (kind) {
     case 'collapsed':
       return `+${String(node.hiddenCount)}`;

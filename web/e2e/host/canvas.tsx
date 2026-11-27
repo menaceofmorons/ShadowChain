@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ReactFlowProvider, useReactFlow, useStoreApi, ViewportPortal } from '@xyflow/react';
 import {
@@ -8,8 +8,10 @@ import {
   createMapSession,
   createPositionStore,
   DEFAULT_ENGINE_OPTIONS,
+  edgeRenderCounts,
   engineEntryForMode,
   generateChain,
+  generateChurnScript,
   LAYOUT_MODES,
   nodeSize,
   ReactFlowCanvas,
@@ -21,9 +23,11 @@ import {
   type CanvasEdge,
   type CanvasGesture,
   type CanvasNode,
+  type ChurnOperation,
   type ChainConnection,
   type ChainGraph,
   type ChainNode,
+  type ChainSystem,
   type ConnectionSize,
   type LifeStage,
   type MassStatus,
@@ -61,13 +65,25 @@ export interface CanvasHostState {
 
 export interface CanvasRenderProbe {
   counts: () => Record<string, number>;
+  edgeCounts: () => Record<string, number>;
   reset: () => void;
+}
+
+export interface CanvasOps {
+  moveNode: (key: string, dx: number, dy: number) => Promise<void>;
+  moveGroup: (keys: readonly string[], dx: number, dy: number) => Promise<void>;
+  setCollapsed: (key: string, collapsed: boolean) => Promise<void>;
+  fieldUpdate: (key: string, label: string) => void;
+  addLeaf: () => Promise<void>;
+  removeLast: () => Promise<void>;
+  churnStep: () => Promise<boolean>;
 }
 
 declare global {
   interface Window {
     __canvas: CanvasHostState;
     __canvasRenders: CanvasRenderProbe;
+    __canvasOps: CanvasOps;
   }
 }
 
@@ -78,6 +94,8 @@ const size = Number(params.get('size') ?? 150);
 const seed = Number(params.get('seed') ?? 7);
 const collapse = Number(params.get('collapse') ?? 0);
 const fixture = params.get('fixture');
+const churnCount = Number(params.get('churn') ?? 0);
+const churnSeed = Number(params.get('churnSeed') ?? 3);
 const MIN_ZOOM = 0.02;
 const FIXTURE_ROOT_SYSTEM_ID = 1;
 const FIXTURE_NEW_SYSTEM_ID = 5;
@@ -101,7 +119,9 @@ window.__canvas = {
   sceneVersion: 0,
 };
 
-window.__canvasRenders = { counts: renderCounts, reset: resetRenderCounts };
+window.__canvasRenders = { counts: renderCounts, edgeCounts: edgeRenderCounts, reset: resetRenderCounts };
+
+const labelOverrides = new Map<string, string>();
 
 interface RingGuide {
   readonly radius: number;
@@ -231,6 +251,7 @@ function sceneOf(session: MapSession): Scene {
     hiddenCount: p.hiddenCount,
     isRoot: p.nodeKey === tree.root.keyString,
     canCollapse: collapsible.has(p.nodeKey),
+    label: labelOverrides.get(p.nodeKey),
   }));
   const rings = session.mode() === 'radial' ? ringGuides(tree.root, nodes) : { centre: { x: 0, y: 0 }, guides: [] };
   window.__canvas.expectedNodeCount = tree.nodes.length;
@@ -333,6 +354,89 @@ function Host() {
       positions: wanderer98.staleUpdate.positions.map((p) => ({ ...p, source: 'manual', collapsed: false })),
     });
   };
+
+  const opsRig = useRef<Rig | null>(null);
+  opsRig.current = rig;
+  const churn = useRef<{ script: readonly ChurnOperation[]; next: number; lastAdded: number | null } | null>(null);
+
+  useEffect(() => {
+    const need = (): Rig => {
+      if (opsRig.current === null) {
+        throw new Error('rig not ready');
+      }
+      return opsRig.current;
+    };
+    const placedOf = (key: string): { x: number; y: number } => {
+      const found = need()
+        .session.placedNodes()
+        .find((p) => p.nodeKey === key);
+      if (found === undefined) {
+        throw new Error(`no node ${key}`);
+      }
+      return found;
+    };
+    const addConnectionOp = async (connection: ChainConnection, systems: ChainSystem[]): Promise<void> => {
+      await need().session.addConnection(connection, systems);
+    };
+    window.__canvasOps = {
+      moveNode: async (key, dx, dy) => {
+        const at = placedOf(key);
+        await need().session.dragNode(key, { x: at.x + dx, y: at.y + dy });
+      },
+      moveGroup: async (keys, dx, dy) => {
+        await need().session.dragGroup(keys, { dx, dy });
+      },
+      setCollapsed: async (key, collapsed) => {
+        await need().session.setCollapsed(key, collapsed);
+      },
+      fieldUpdate: (key, label) => {
+        labelOverrides.set(key, label);
+        setScene(sceneOf(need().session));
+      },
+      addLeaf: async () => {
+        const current = need().session.graph();
+        const systemId = Math.max(...current.systems.map((system) => system.id)) + 1;
+        const connectionId = Math.max(...current.connections.map((connection) => connection.id)) + 1;
+        const state = (churn.current ??= { script: [], next: 0, lastAdded: null });
+        state.lastAdded = connectionId;
+        await addConnectionOp(
+          { id: connectionId, createdAt: connectionId, endA: need().rootSystemId, endB: systemId },
+          [{ id: systemId }],
+        );
+      },
+      removeLast: async () => {
+        const state = churn.current;
+        if (state?.lastAdded === null || state === null) {
+          throw new Error('nothing to remove');
+        }
+        await need().session.removeConnections([state.lastAdded]);
+        state.lastAdded = null;
+      },
+      churnStep: async () => {
+        const { session } = need();
+        const state = (churn.current ??= {
+          script: generateChurnScript(session.graph(), { seed: churnSeed, operationCount: churnCount }),
+          next: 0,
+          lastAdded: null,
+        });
+        const operation = state.script[state.next];
+        if (operation === undefined) {
+          return false;
+        }
+        state.next += 1;
+        if (operation.kind === 'add') {
+          const known = new Set(session.graph().systems.map((system) => system.id));
+          const missing = [operation.connection.endA, operation.connection.endB]
+            .filter((id): id is number => id !== null && !known.has(id))
+            .map((id) => ({ id }));
+          await session.addConnection(operation.connection, missing);
+        } else {
+          await session.removeConnections([operation.connectionId]);
+        }
+        return true;
+      },
+    };
+  }, []);
 
   const onGesture = (gesture: CanvasGesture): void => {
     window.__canvas.gestures = [...window.__canvas.gestures, gesture.type];
