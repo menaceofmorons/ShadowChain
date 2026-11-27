@@ -431,10 +431,11 @@ for (const nodeCount of SIZES) {
 
       await test.step('drag and collapse again, then Tidy', async () => {
         await realDrag(page, dragKey);
+        await expectBatches('drag again', true);
         await menuChoice(page, collapseKey, 'collapse');
         await expectNoOverlap(page, 'drag and collapse');
         await expectStore(page, { manual: [dragKey], collapsed: [collapseKey], rootOffset: offset });
-        await expectBatches('drag and collapse', true);
+        await expectBatches('collapse again', true);
 
         const version = await sceneVersion(page);
         await page.getByTestId('tidy').click();
