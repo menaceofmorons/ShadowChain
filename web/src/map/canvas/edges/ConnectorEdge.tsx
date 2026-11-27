@@ -4,6 +4,7 @@ import type { ConnectionEncoding } from '../../encoding';
 import type { LayoutMode } from '../../layout/types';
 import { BADGE_HEIGHT, BADGE_WIDTH } from './connectorBounds';
 import { rectFromHandle, routeConnector, type Size } from './connectorRouting';
+import { recordEdgeRender } from '../renderCounts';
 
 export interface ConnectorData extends Record<string, unknown> {
   mode: LayoutMode;
@@ -30,6 +31,7 @@ export const ConnectorEdge = memo(function ConnectorEdge({
   targetY,
   data,
 }: EdgeProps<ConnectorEdgeType>) {
+  recordEdgeRender(`${source}>${target}`);
   const mode = data?.mode ?? 'top-down';
   const encodings = data?.encodings;
   const sourceSize = data?.sourceSize;

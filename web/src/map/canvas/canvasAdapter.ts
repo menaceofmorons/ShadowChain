@@ -12,6 +12,7 @@ export interface CanvasNode {
   hiddenCount?: number | null;
   isRoot?: boolean;
   canCollapse?: boolean;
+  label?: string;
 }
 
 export interface CanvasEdge {
