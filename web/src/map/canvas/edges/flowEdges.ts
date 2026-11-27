@@ -46,7 +46,7 @@ export function buildFlowEdges(
   const next: EdgeCache = new Map();
   const built = edges.map((edge) => {
     const fresh: ConnectorEdgeType = {
-      id: String(edge.connectionId),
+      id: edge.connectionId < 0 ? `${edge.sourceKey}>${edge.targetKey}` : String(edge.connectionId),
       source: edge.sourceKey,
       target: edge.targetKey,
       type: mode === 'radial' ? 'straight' : 'default',

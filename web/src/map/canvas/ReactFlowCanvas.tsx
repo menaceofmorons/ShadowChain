@@ -5,6 +5,7 @@ import { buildFlowEdges, EDGE_TYPES, type ConnectorEdgeType, type EdgeCache } fr
 import { DEFAULT_ENGINE_OPTIONS, nodeSizeForKind } from '../layout/engineOptions';
 import type { LayoutMode } from '../layout/types';
 import type { CanvasAdapterProps, CanvasNode, MovedNode } from './canvasAdapter';
+import type { CanvasGesture } from './interaction/gestures';
 import { NODE_TYPES, SIDES, type BoxData, type BoxNode } from './canvasNodes';
 import { createHighlightStore, HighlightContext } from './highlightStore';
 import {
@@ -106,6 +107,11 @@ function constrainRootChanges(
   });
 }
 
+interface BuiltEdges {
+  readonly edges: ConnectorEdgeType[];
+  readonly cache: EdgeCache;
+}
+
 interface DragStart {
   readonly alone: boolean;
   readonly starts: ReadonlyMap<string, Point>;
@@ -126,28 +132,23 @@ export function ReactFlowCanvas({
   onNodesMoved,
   onGesture,
 }: CanvasAdapterProps) {
-  const cache = useRef(new Map<string, BoxNode>());
+  const [shownBase, setShownBase] = useState<BoxNode[] | null>(null);
+  const [flowNodes, setFlowNodes] = useState<BoxNode[]>([]);
   const baseNodes = useMemo<BoxNode[]>(() => {
-    const next = new Map<string, BoxNode>();
-    const built = nodes.map((n) => {
+    const previousByKey = new Map((shownBase ?? []).map((node) => [node.id, node]));
+    return nodes.map((n) => {
       const fresh = toBoxNode(n, mode);
-      const previous = cache.current.get(n.key);
+      const previous = previousByKey.get(n.key);
       const reuse =
         previous !== undefined &&
         previous.position.x === fresh.position.x &&
         previous.position.y === fresh.position.y &&
         previous.type === fresh.type &&
         sameData(previous.data, fresh.data);
-      const chosen = reuse ? previous : fresh;
-      next.set(n.key, chosen);
-      return chosen;
+      return reuse ? previous : fresh;
     });
-    cache.current = next;
-    return built;
   }, [nodes, mode]);
 
-  const [shownBase, setShownBase] = useState(baseNodes);
-  const [flowNodes, setFlowNodes] = useState(baseNodes);
   if (shownBase !== baseNodes) {
     setShownBase(baseNodes);
     setFlowNodes((current) => withSelection(baseNodes, current));
@@ -182,6 +183,19 @@ export function ReactFlowCanvas({
     });
   }, [menu, byKey]);
 
+  const dispatchGesture = (gesture: CanvasGesture): void => {
+    const resync = (): void => {
+      setFlowNodes((current) => withSelection(baseNodes, current));
+    };
+    void (async () => {
+      try {
+        await onGesture?.(gesture);
+      } catch {
+        resync();
+      }
+    })();
+  };
+
   const finishDrag = (dragged: readonly BoxNode[]): void => {
     const begun = dragStart.current;
     dragStart.current = null;
@@ -201,22 +215,26 @@ export function ReactFlowCanvas({
     if (plan === null) {
       setFlowNodes((current) => withSelection(baseNodes, current));
     } else {
-      onGesture?.(plan);
+      dispatchGesture(plan);
     }
   };
 
-  const edgeCache = useRef<EdgeCache>(new Map());
-  const flowEdges = useMemo<ConnectorEdgeType[]>(() => {
-    const built = buildFlowEdges(
-      nodes,
-      edges,
-      mode,
-      (node) => nodeSizeForKind(ENGINE_KIND[canvasNodeKind(node)], DEFAULT_ENGINE_OPTIONS),
-      edgeCache.current,
-    );
-    edgeCache.current = built.cache;
-    return built.edges;
-  }, [edges, nodes, mode]);
+  const [shownEdges, setShownEdges] = useState<BuiltEdges | null>(null);
+  const built = useMemo<BuiltEdges>(
+    () =>
+      buildFlowEdges(
+        nodes,
+        edges,
+        mode,
+        (node) => nodeSizeForKind(ENGINE_KIND[canvasNodeKind(node)], DEFAULT_ENGINE_OPTIONS),
+        shownEdges?.cache ?? new Map(),
+      ),
+    [edges, nodes, mode],
+  );
+  if (shownEdges !== built) {
+    setShownEdges(built);
+  }
+  const flowEdges: ConnectorEdgeType[] = built.edges;
 
   const highlight = useRef(createHighlightStore()).current;
   const groups = useMemo(() => highlightGroups(nodes), [nodes]);
@@ -244,7 +262,7 @@ export function ReactFlowCanvas({
           select(node.id);
           onNodeSelect(node.id);
           if (node.data.kind === 'collapsed') {
-            onGesture?.({ type: 'set-collapsed', key: node.id, collapsed: false });
+            dispatchGesture({ type: 'set-collapsed', key: node.id, collapsed: false });
           }
         }}
         onPaneClick={() => {
@@ -273,7 +291,7 @@ export function ReactFlowCanvas({
             x={menu.x}
             y={menu.y}
             items={menuItems}
-            onChoose={(gesture) => onGesture?.(gesture)}
+            onChoose={dispatchGesture}
             onClose={() => {
               setMenu(null);
             }}
